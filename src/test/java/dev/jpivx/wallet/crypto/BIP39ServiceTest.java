@@ -152,6 +152,25 @@ class BIP39ServiceTest {
         assertEquals(64, BIP39Service.toSeed(BIP39Service.parse(phrase)).length);
     }
 
+    @Test
+    void generateMnemonicHonoursSupportedWordCounts() {
+        for (int wordCount : new int[] {12, 15, 18, 21, 24}) {
+            List<String> words = BIP39Service.generateMnemonic(wordCount);
+            assertEquals(wordCount, words.size());
+            assertDoesNotThrow(() -> BIP39Service.validate(words),
+                    wordCount + "-word mnemonic must pass its own checksum validation");
+        }
+    }
+
+    @Test
+    void generateMnemonicRejectsUnsupportedWordCounts() {
+        for (int wordCount : new int[] {0, 11, 13, 20, 25, -12}) {
+            assertThrows(IllegalArgumentException.class,
+                    () -> BIP39Service.generateMnemonic(wordCount),
+                    "word count " + wordCount + " must be rejected");
+        }
+    }
+
     // -------------------------------------------------------------------------
     // parse / normalize
     // -------------------------------------------------------------------------

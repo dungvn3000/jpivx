@@ -51,6 +51,9 @@ Requirements: JDK 21+, Maven 3.9+ (wrapper included); Rust toolchain (cargo) for
 List<String> words = BIP39Service.generateMnemonic();
 String mnemonic = String.join(" ", words);
 
+// Or pick the length: 12, 15, 18, 21, or 24 words
+List<String> short12 = BIP39Service.generateMnemonic(12);
+
 // Parse an existing mnemonic (whitespace-tolerant, case-insensitive —
 // words are trimmed and lower-cased before seed derivation)
 List<String> parsed = BIP39Service.parse(mnemonic);

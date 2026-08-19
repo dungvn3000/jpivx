@@ -6,6 +6,7 @@ import dev.jpivx.wallet.internal.MnemonicCode.MnemonicException;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -22,6 +23,13 @@ public final class BIP39Service {
 
     /** Entropy length for a 24-word mnemonic (matches Rust {@code create_new_wallet}). */
     public static final int ENTROPY_BYTES_24_WORDS = 32;
+
+    /** Default word count when none is given (matches Rust {@code create_new_wallet}). */
+    public static final int DEFAULT_WORD_COUNT = 24;
+
+    /** Word counts accepted by {@link #generateMnemonic(int)}. */
+    public static final List<Integer> SUPPORTED_WORD_COUNTS =
+            Collections.unmodifiableList(Arrays.asList(12, 15, 18, 21, 24));
 
     private BIP39Service() {
         throw new AssertionError("no instances");
@@ -41,11 +49,22 @@ public final class BIP39Service {
      * Generate a fresh 24-word mnemonic using a cryptographically strong RNG.
      *
      * @return the mnemonic word list (24 words)
-     * @throws MnemonicException.MnemonicLengthException never in practice (32 bytes is valid)
      */
     public static List<String> generateMnemonic() {
+        return generateMnemonic(DEFAULT_WORD_COUNT);
+    }
+
+    /**
+     * Generate a fresh mnemonic of the requested length using a cryptographically strong RNG.
+     *
+     * @param wordCount one of {@code 12}, {@code 15}, {@code 18}, {@code 21}, {@code 24}
+     * @return the mnemonic word list
+     * @throws IllegalArgumentException if {@code wordCount} is not a supported length
+     */
+    public static List<String> generateMnemonic(int wordCount) {
+        int entropyBytes = entropyBytesFor(wordCount);
         try {
-            byte[] entropy = new byte[ENTROPY_BYTES_24_WORDS];
+            byte[] entropy = new byte[entropyBytes];
             try {
                 SecureRandom.getInstanceStrong().nextBytes(entropy);
             } catch (java.security.NoSuchAlgorithmException e) {
@@ -53,7 +72,21 @@ public final class BIP39Service {
             }
             return MnemonicCode.INSTANCE.toMnemonic(entropy);
         } catch (MnemonicException.MnemonicLengthException e) {
-            throw new IllegalStateException("32-byte entropy is always valid BIP39", e);
+            throw new IllegalStateException(entropyBytes + "-byte entropy is always valid BIP39", e);
+        }
+    }
+
+    /** Entropy length in bytes for a supported word count: {@code wordCount * 11 / 8} rounded to ENT. */
+    private static int entropyBytesFor(int wordCount) {
+        switch (wordCount) {
+            case 12: return 16;
+            case 15: return 20;
+            case 18: return 24;
+            case 21: return 28;
+            case 24: return ENTROPY_BYTES_24_WORDS;
+            default:
+                throw new IllegalArgumentException(
+                        "Unsupported word count: " + wordCount + " (supported: " + SUPPORTED_WORD_COUNTS + ")");
         }
     }
 
