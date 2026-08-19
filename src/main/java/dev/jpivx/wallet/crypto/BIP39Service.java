@@ -79,7 +79,7 @@ public final class BIP39Service {
         List<String> words = new ArrayList<>(parts.length);
         for (String p : parts) {
             if (!p.isEmpty()) {
-                words.add(p);
+                words.add(p.toLowerCase(java.util.Locale.ROOT));
             }
         }
         return words;
@@ -98,7 +98,6 @@ public final class BIP39Service {
      * (matches Rust {@code Mnemonic::parse_normalized}).
      */
     public static String normalize(String mnemonic) {
-        List<String> words = parse(mnemonic);
-        return String.join(" ", words).toLowerCase();
+        return String.join(" ", parse(mnemonic));
     }
 }

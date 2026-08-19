@@ -307,6 +307,6 @@ public final class CoinSelector {
      * @return fee in satoshis
      */
     public static long estimateFee(int nInputs, int nOutputs) {
-        return (nInputs * INPUT_VBYTES + nOutputs * OUTPUT_VBYTES + OVERHEAD_VBYTES) * FEE_RATE;
+        return dev.jpivx.wallet.core.FeeEstimator.estimateRawTransparentFee(nInputs, nOutputs);
     }
 }

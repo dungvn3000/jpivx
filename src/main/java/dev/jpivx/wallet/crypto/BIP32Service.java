@@ -66,7 +66,7 @@ public final class BIP32Service {
     public static List<ChildNumber> pivxTransparentPath(int change, int index) {
         return List.of(
                 new ChildNumber(44, true),
-                new ChildNumber(119, true),
+                new ChildNumber(dev.jpivx.wallet.core.PivxParams.PIVX_COIN_TYPE, true),
                 new ChildNumber(0, true),
                 new ChildNumber(change, false),
                 new ChildNumber(index, false)

@@ -132,7 +132,8 @@ public final class PivxMessageSigner {
     static byte[] messageHash(String message) {
         byte[] magic = PivxParams.PIVX_MSG_MAGIC.getBytes(StandardCharsets.UTF_8);
         byte[] msg = message.getBytes(StandardCharsets.UTF_8);
-        ByteBuffer buf = ByteBuffer.allocate(magic.length + msg.length + 18);
+        ByteBuffer buf = ByteBuffer.allocate(magic.length + msg.length + 18)
+                .order(java.nio.ByteOrder.LITTLE_ENDIAN); // Bitcoin compact-size is LE
         writeCompactSize(buf, magic.length);
         buf.put(magic);
         writeCompactSize(buf, msg.length);
@@ -163,6 +164,11 @@ public final class PivxMessageSigner {
     private static byte[] recoverPubKey(byte[] messageHash, BigInteger r, BigInteger s, int recid) {
         ECDomainParameters params = ECKey.CURVE;
         BigInteger n = params.getN();
+        // libsecp256k1 rejects r,s outside [1, n-1]; r=0 would also make
+        // r.modInverse(n) below throw an uncaught ArithmeticException.
+        if (r.signum() <= 0 || r.compareTo(n) >= 0 || s.signum() <= 0 || s.compareTo(n) >= 0) {
+            return null;
+        }
         org.bouncycastle.math.ec.ECCurve curve = params.getCurve();
         BigInteger p = curve.getField().getCharacteristic();
 

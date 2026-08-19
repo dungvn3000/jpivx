@@ -47,6 +47,15 @@ class TransparentKeysTest {
     }
 
     @Test
+    void mixedCaseMnemonicDerivesSameAddress() {
+        // parse() lower-cases words, so casing must not change the seed —
+        // otherwise the stored (normalized) mnemonic wouldn't reproduce the wallet.
+        String mixed = TEST_MNEMONIC.substring(0, 1).toUpperCase(java.util.Locale.ROOT)
+                + TEST_MNEMONIC.substring(1);
+        assertEquals(EXPECTED_ADDRESS, TransparentKeys.getTransparentAddress(mixed));
+    }
+
+    @Test
     void transparentKeyTripleHasCorrectShape() {
         byte[] seed = BIP39Service.toSeed(BIP39Service.parse(TEST_MNEMONIC));
         TransparentKeys.TransparentKey key =

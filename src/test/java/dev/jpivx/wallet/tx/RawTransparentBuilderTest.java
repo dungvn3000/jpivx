@@ -200,6 +200,56 @@ class RawTransparentBuilderTest {
                         seed(), 0, 0, utxos, shieldDest, 100_000_000));
     }
 
+    // ---- amount validation & dust handling ----
+
+    @Test
+    void nonPositiveAmountsAreRejected() {
+        List<Utxo> utxos = List.of(utxo("a", 0, 500_000_000));
+        for (long bad : new long[]{0, -1, -100_000_000}) {
+            assertThrows(IllegalArgumentException.class,
+                    () -> RawTransparentBuilder.createRawTransparentTransaction(
+                            utxos, seed(), ownAddress(), bad));
+            assertThrows(IllegalArgumentException.class,
+                    () -> RawTransparentBuilder.createRawTransparentTransactionFromUtxos(
+                            seed(), 0, 0, utxos, ownAddress(), bad));
+            assertThrows(IllegalArgumentException.class,
+                    () -> RawTransparentBuilder.createRawTransparentTransactionMultiIndex(
+                            utxos, seed(), ownAddress(), bad));
+        }
+    }
+
+    @Test
+    void nearMaxAmountFailsInsteadOfOverflowing() {
+        // amount + fee used to wrap negative, pass the sufficiency check, and
+        // produce a signed tx with garbage output values.
+        List<Utxo> utxos = List.of(utxo("a", 0, 500_000_000));
+        assertThrows(RuntimeException.class,
+                () -> RawTransparentBuilder.createRawTransparentTransactionFromUtxos(
+                        seed(), 0, 0, utxos, ownAddress(), Long.MAX_VALUE - 1000));
+        assertThrows(RuntimeException.class,
+                () -> RawTransparentBuilder.createRawTransparentTransaction(
+                        utxos, seed(), ownAddress(), Long.MAX_VALUE - 1000));
+    }
+
+    @Test
+    void subDustChangeIsFoldedIntoFee() {
+        // One UTXO whose surplus over amount+fee is below the 546-sat dust
+        // threshold: the tx must have ONE output and report the dust as fee.
+        long fee2 = CoinSelector.estimateFee(1, 2);
+        long amount = 100_000_000;
+        long dust = 100; // < MIN_CHANGE
+        List<Utxo> utxos = List.of(utxo("a", 0, amount + fee2 + dust));
+        TransparentTransactionResult r =
+                RawTransparentBuilder.createRawTransparentTransactionFromUtxos(
+                        seed(), 0, 0, utxos, ownAddress(), amount);
+        assertEquals(fee2 + dust, r.fee(), "dust change must be donated to the fee");
+        // No change output: a 100-sat output value must not appear in the tx.
+        byte[] tx = dev.jpivx.wallet.internal.ByteUtil.fromHex(r.txhex());
+        byte[] dustLe = new byte[]{100, 0, 0, 0, 0, 0, 0, 0};
+        org.junit.jupiter.api.Assertions.assertFalse(windowsContains(tx, dustLe),
+                "sub-dust change output must not be serialized");
+    }
+
     // ---- createRawTransparentTransaction insufficient balance ----
 
     @Test

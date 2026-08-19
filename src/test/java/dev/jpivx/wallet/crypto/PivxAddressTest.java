@@ -60,6 +60,19 @@ class PivxAddressTest {
     }
 
     @Test
+    void addressDecodeRejectsForeignVersionByte() {
+        // A checksummed 21-byte payload with a NON-PIVX version byte must be
+        // rejected: a Bitcoin ('1...', version 0) address is otherwise a valid
+        // Base58Check string and would become an irreversible wrong-chain send.
+        byte[] hash160 = PivxAddress.addressToHash160(TransparentKeysTest.EXPECTED_ADDRESS);
+        String bitcoinStyle = dev.jpivx.wallet.internal.Base58.encodeChecked(0, hash160);
+        assertThrows(IllegalArgumentException.class,
+                () -> PivxAddress.addressToP2pkhScript(bitcoinStyle));
+        assertThrows(IllegalArgumentException.class,
+                () -> PivxAddress.addressToHash160(bitcoinStyle));
+    }
+
+    @Test
     void addressToP2pkhScriptRejectsMalformed() {
         // Wrong length after decode — a raw base58 string that decodes to
         // something other than 21 bytes (version + hash). The plain "abc"

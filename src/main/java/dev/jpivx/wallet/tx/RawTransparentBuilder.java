@@ -62,6 +62,7 @@ public final class RawTransparentBuilder {
             byte[] bip39Seed, int fromChange, int fromIndex, List<Utxo> utxos,
             String toAddress, long amount) {
         requireTransparentDest(toAddress);
+        requireValidAmount(amount);
         if (utxos.isEmpty()) {
             throw new IllegalArgumentException("No UTXOs provided");
         }
@@ -77,18 +78,18 @@ public final class RawTransparentBuilder {
         }
 
         long fee = FeeEstimator.estimateRawTransparentFee(utxos.size(), 2);
-        if (total < amount + fee) {
+        if (total < Math.addExact(amount, fee)) {
             throw new IllegalArgumentException(
                     "Insufficient UTXOs. Have: " + total + " sat, need: " + amount + " sat + " + fee + " sat fee");
         }
-        long change = total - amount - fee;
+        Selection sel = foldDustChange(utxos, fee, total - amount - fee);
 
         // Every input signs with the same key/script.
         TransparentKeys.TransparentKey[] inputKeys = new TransparentKeys.TransparentKey[utxos.size()];
         java.util.Arrays.fill(inputKeys, own);
 
-        byte[] txBytes = buildAndSign(utxos, inputKeys, ownScript, toScript, amount, change);
-        return result(txBytes, utxos, amount, fee);
+        byte[] txBytes = buildAndSign(utxos, inputKeys, ownScript, toScript, amount, sel.change);
+        return result(txBytes, utxos, amount, sel.fee);
     }
 
     /**
@@ -108,6 +109,7 @@ public final class RawTransparentBuilder {
     public static TransparentTransactionResult createRawTransparentTransaction(
             List<Utxo> utxos, byte[] bip39Seed, String toAddress, long amount) {
         requireTransparentDest(toAddress);
+        requireValidAmount(amount);
         if (utxos.isEmpty()) {
             throw new IllegalArgumentException("No transparent UTXOs available");
         }
@@ -141,7 +143,22 @@ public final class RawTransparentBuilder {
      */
     public static TransparentTransactionResult createRawTransparentTransactionMultiIndex(
             List<Utxo> utxos, byte[] bip39Seed, String toAddress, long amount) {
+        return createRawTransparentTransactionMultiIndex(utxos, bip39Seed, toAddress, amount, 0);
+    }
+
+    /**
+     * Variant of {@link #createRawTransparentTransactionMultiIndex(List, byte[], String, long)}
+     * that signs every input on the given HD change branch
+     * ({@code m/44'/119'/0'/{fromChange}/{utxo.hdIndex()}}). All supplied UTXOs
+     * must belong to that single branch — {@link Utxo} does not carry a branch
+     * field, so mixed-branch input sets are not supported.
+     *
+     * @param fromChange HD change branch (0 = external, 1 = internal)
+     */
+    public static TransparentTransactionResult createRawTransparentTransactionMultiIndex(
+            List<Utxo> utxos, byte[] bip39Seed, String toAddress, long amount, int fromChange) {
         requireTransparentDest(toAddress);
+        requireValidAmount(amount);
         if (utxos.isEmpty()) {
             throw new IllegalArgumentException("No transparent UTXOs available");
         }
@@ -154,7 +171,7 @@ public final class RawTransparentBuilder {
                 new TransparentKeys.TransparentKey[sel.selected.size()];
         for (int i = 0; i < sel.selected.size(); i++) {
             inputKeys[i] = keyCache.computeIfAbsent(sel.selected.get(i).hdIndex(), idx ->
-                    TransparentKeys.transparentKeyFromBip39Seed(bip39Seed, 0, idx));
+                    TransparentKeys.transparentKeyFromBip39Seed(bip39Seed, fromChange, idx));
         }
 
         byte[] toScript = PivxAddress.addressToP2pkhScript(toAddress);
@@ -173,6 +190,24 @@ public final class RawTransparentBuilder {
         }
     }
 
+    private static void requireValidAmount(long amount) {
+        if (amount <= 0) {
+            throw new IllegalArgumentException("amount must be positive: " + amount);
+        }
+    }
+
+    /**
+     * Fold a change output below the dust threshold into the fee — nodes reject
+     * sub-dust outputs as nonstandard, and reference wallets donate it to miners.
+     */
+    private static Selection foldDustChange(List<Utxo> selected, long fee, long change) {
+        if (change > 0 && change < CoinSelector.MIN_CHANGE) {
+            fee += change;
+            change = 0;
+        }
+        return new Selection(selected, fee, change);
+    }
+
     /** Coin selection outcome: chosen inputs + the fee/change they imply. */
     private record Selection(List<Utxo> selected, long fee, long change) {}
 
@@ -184,17 +219,20 @@ public final class RawTransparentBuilder {
         Optional<List<Utxo>> bnb = CoinSelector.selectBnB(utxos, amount, 1);
         if (bnb.isPresent()) {
             List<Utxo> selected = bnb.get();
-            return new Selection(selected, CoinSelector.estimateFee(selected.size(), 1), 0);
+            // Changeless: everything above the payment is fee (BnB may leave up
+            // to MIN_CHANGE of surplus for the miners on top of the estimate).
+            long total = selected.stream().mapToLong(Utxo::amount).sum();
+            return new Selection(selected, total - amount, 0);
         }
         List<Utxo> selected = CoinSelector.selectKnapsack(utxos, amount, 2);
         long fee = CoinSelector.estimateFee(selected.size(), 2);
         long total = selected.stream().mapToLong(Utxo::amount).sum();
-        long change = total - amount - fee;
+        long change = total - Math.addExact(amount, fee);
         if (change < 0) {
             throw new IllegalArgumentException(
                     "Insufficient public balance: need " + (amount + fee) + " sat");
         }
-        return new Selection(selected, fee, change);
+        return foldDustChange(selected, fee, change);
     }
 
     private static TransparentTransactionResult result(byte[] txBytes, List<Utxo> selected,

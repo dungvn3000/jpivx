@@ -85,6 +85,46 @@ class PivxMessageSignerTest {
     }
 
     @Test
+    void longMessageUsesLittleEndianCompactSize() {
+        // Messages >= 253 bytes take the 0xfd + u16 compact-size path; the u16
+        // must be little-endian to match PIVX Core's preimage.
+        String longMessage = "x".repeat(300);
+        byte[] hash = PivxMessageSigner.messageHash(longMessage);
+
+        // Rebuild the expected preimage by hand with a known-good LE encoding.
+        byte[] magic = dev.jpivx.wallet.core.PivxParams.PIVX_MSG_MAGIC
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        java.io.ByteArrayOutputStream preimage = new java.io.ByteArrayOutputStream();
+        preimage.write(magic.length); // < 253: single byte
+        preimage.writeBytes(magic);
+        preimage.write(0xfd);
+        preimage.write(300 & 0xff);        // LE low byte
+        preimage.write((300 >>> 8) & 0xff); // LE high byte
+        preimage.writeBytes(longMessage.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        org.junit.jupiter.api.Assertions.assertArrayEquals(
+                PivxAddress.doubleSha256(preimage.toByteArray()), hash);
+
+        // And the full sign/verify roundtrip still holds for long messages.
+        byte[] privkey = derivePrivKey();
+        String address = TransparentKeys.getTransparentAddress(TEST_MNEMONIC);
+        String sig = PivxMessageSigner.signMessage(privkey, longMessage);
+        assertTrue(PivxMessageSigner.verifyMessage(address, longMessage, sig));
+    }
+
+    @Test
+    void craftedZeroRSignatureThrowsDocumentedException() {
+        // r = 0 with recid 2/3 used to reach r.modInverse(n) and escape as an
+        // uncaught ArithmeticException; it must surface as the documented
+        // IllegalArgumentException instead.
+        byte[] crafted = new byte[65];
+        crafted[0] = 33; // header: compressed, recid 2
+        crafted[64] = 1; // s = 1 (valid), r stays all-zero
+        String craftedB64 = java.util.Base64.getEncoder().encodeToString(crafted);
+        assertThrows(IllegalArgumentException.class,
+                () -> PivxMessageSigner.verifyMessage(GOLDEN_ADDRESS, "msg", craftedB64));
+    }
+
+    @Test
     void signMessageRejectsBadPrivkeyLength() {
         assertThrows(IllegalArgumentException.class,
                 () -> PivxMessageSigner.signMessage(new byte[31], "msg"));

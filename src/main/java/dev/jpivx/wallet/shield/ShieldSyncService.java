@@ -94,6 +94,10 @@ public final class ShieldSyncService {
 
         // The stream contains only blocks with shield activity; the state is
         // now caught up to the chain tip regardless of the last shield block.
+        // Truncation mid-length/mid-packet or txs missing their footer throw in
+        // the parser above; a cut exactly at a packet boundary is not detectable
+        // (the protocol has no end marker), nor is a load balancer serving
+        // getblockcount and getshielddata from different nodes.
         state.setLastBlock(tip);
         if (afterBatch != null) {
             afterBatch.accept(state);

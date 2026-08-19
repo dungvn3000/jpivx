@@ -98,6 +98,28 @@ class ShieldStreamParserTest {
         assertNull(parser.nextBatch(1));
     }
 
+    @Test
+    void footerFormatHandlesEmptyBlock() throws IOException {
+        // A block with zero txs in a footer stream: its 9-byte footer must NOT
+        // be misread as a header opening a phantom block (which would shift
+        // every later block's tx grouping).
+        ByteArrayInputStream in = stream(
+                blockMarker(100, true),                     // empty block
+                txPacket(0x03, 1), blockMarker(101, true),  // then a normal one
+                txPacket(0x03, 9), blockMarker(102, true));
+        ShieldStreamParser parser = new ShieldStreamParser(in);
+
+        List<ShieldBlock> batch = parser.nextBatch(10);
+        assertEquals(3, batch.size());
+        assertEquals(100, batch.get(0).height());
+        assertTrue(batch.get(0).txs().isEmpty());
+        assertEquals(101, batch.get(1).height());
+        assertEquals(1, batch.get(1).txs().size());
+        assertEquals(102, batch.get(2).height());
+        assertEquals(1, batch.get(2).txs().size());
+        assertNull(parser.nextBatch(10));
+    }
+
     // ---- header format (compact bridge: 5-byte 0x5d header before txs) ----
 
     @Test
@@ -138,10 +160,12 @@ class ShieldStreamParserTest {
     }
 
     @Test
-    void partialLengthIsCleanEof() throws IOException {
+    void partialLengthIsTruncationError() {
+        // 1-3 bytes of a length prefix = the stream was cut mid-length; only a
+        // read of exactly 0 bytes at a packet boundary counts as clean EOF.
         ShieldStreamParser parser =
                 new ShieldStreamParser(new ByteArrayInputStream(new byte[]{0x10, 0x00}));
-        assertNull(parser.nextBatch(10));
+        assertThrows(IOException.class, () -> parser.nextBatch(10));
     }
 
     @Test

@@ -135,8 +135,11 @@ public class MnemonicCode {
      * @return 64-byte seed
      */
     public static byte[] toSeed(List<String> mnemonic, String passphrase) {
-        String pass = String.join(" ", mnemonic);
-        String salt = "mnemonic" + (passphrase != null ? passphrase : "");
+        // BIP39 mandates NFKD normalization of both the mnemonic and the passphrase.
+        String pass = java.text.Normalizer.normalize(
+                String.join(" ", mnemonic), java.text.Normalizer.Form.NFKD);
+        String salt = java.text.Normalizer.normalize(
+                "mnemonic" + (passphrase != null ? passphrase : ""), java.text.Normalizer.Form.NFKD);
         try {
             PBEKeySpec spec = new PBEKeySpec(
                     pass.toCharArray(), salt.getBytes(StandardCharsets.UTF_8), 2048, 512);

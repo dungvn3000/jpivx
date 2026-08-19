@@ -52,8 +52,11 @@ public final class ShieldNodeClient {
      * the chain tip. Caller MUST close the returned stream (try-with-resources).
      */
     public InputStream getShieldData(int startBlock) throws IOException, InterruptedException {
+        // Response timeout covers time-to-headers only; the streamed body can
+        // legitimately take much longer and is not cut off by this.
         HttpRequest req = HttpRequest.newBuilder(
                         URI.create(baseUrl + "/getshielddata?startBlock=" + startBlock))
+                .timeout(Duration.ofSeconds(60))
                 .GET()
                 .build();
         HttpResponse<InputStream> res = http.send(req, HttpResponse.BodyHandlers.ofInputStream());

@@ -41,8 +41,10 @@ public final class ShieldState {
     public String getCommitmentTree() { return commitmentTree; }
     public void setCommitmentTree(String commitmentTree) { this.commitmentTree = commitmentTree; }
 
-    /** Unspent Sapling notes after the last sync. */
-    public List<SerializedNote> getUnspentNotes() { return unspentNotes; }
+    /** Unspent Sapling notes after the last sync (read-only view). */
+    public List<SerializedNote> getUnspentNotes() {
+        return java.util.Collections.unmodifiableList(unspentNotes);
+    }
     public void setUnspentNotes(List<SerializedNote> unspentNotes) {
         this.unspentNotes = unspentNotes != null ? new ArrayList<>(unspentNotes) : new ArrayList<>();
     }

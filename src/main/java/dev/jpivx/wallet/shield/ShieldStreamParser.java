@@ -100,19 +100,34 @@ public final class ShieldStreamParser {
 
             int tag = payload[0] & 0xff;
             if (tag == TAG_BLOCK) {
-                if (openBlock != null) {
-                    // Header following an open block closes it (header format).
-                    blocks.add(openBlock);
-                    openBlock = new MutableBlock(leu32(payload, 1));
-                } else if (!pendingTxs.isEmpty()) {
+                // The two marker formats differ in payload length: a footer is
+                // 9 bytes (0x5d + height + time), a header is 5 (0x5d + height).
+                // Grouping by parser state alone would misread an EMPTY block's
+                // footer as a header and shift every later block's txs.
+                if (len == 9) {
                     // Footer AFTER txs (PivxNodeController / PIVX Core REST).
+                    if (openBlock != null) {
+                        throw new IOException("Mixed shield block marker formats: "
+                                + "9-byte footer while a header block is open");
+                    }
                     MutableBlock block = new MutableBlock(leu32(payload, 1));
                     block.txs.addAll(pendingTxs);
                     blocks.add(block);
                     pendingTxs.clear();
-                } else {
-                    // Header opening a fresh block (compact bridge format).
+                } else if (len == 5) {
+                    // Header BEFORE txs (compact bridge format); closes any open block.
+                    if (!pendingTxs.isEmpty()) {
+                        throw new IOException("Mixed shield block marker formats: "
+                                + "5-byte header while " + pendingTxs.size()
+                                + " txs await a footer");
+                    }
+                    if (openBlock != null) {
+                        blocks.add(openBlock);
+                    }
                     openBlock = new MutableBlock(leu32(payload, 1));
+                } else {
+                    throw new IOException("Bad block marker payload length: " + len
+                            + " bytes (expected 5 for header or 9 for footer)");
                 }
             } else if (tag == TAG_FULL_TX || tag == TAG_COMPACT_TX) {
                 if (openBlock != null) {
@@ -151,14 +166,18 @@ public final class ShieldStreamParser {
     }
 
     /**
-     * Read a 4-byte little-endian length (unsigned). Returns {@code null}
-     * when fewer than 4 bytes remain (the kit treats a partial length as
-     * clean EOF).
+     * Read a 4-byte little-endian length (unsigned). Returns {@code null} on
+     * clean end-of-stream (exactly at a packet boundary); a partial 1–3 byte
+     * read means the stream was cut mid-length and is an error.
      */
     private Long readU32Le() throws IOException {
         byte[] buf = in.readNBytes(4);
-        if (buf.length < 4) {
+        if (buf.length == 0) {
             return null;
+        }
+        if (buf.length < 4) {
+            throw new IOException("shield stream truncated mid-length: got "
+                    + buf.length + " of 4 bytes");
         }
         return ((long) buf[0] & 0xff)
                 | (((long) buf[1] & 0xff) << 8)

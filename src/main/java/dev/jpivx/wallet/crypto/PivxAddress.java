@@ -45,14 +45,11 @@ public final class PivxAddress {
      *
      * @param address the base58check address ({@code D...})
      * @return 25-byte script: {@code OP_DUP OP_HASH160 <20-byte-hash> OP_EQUALVERIFY OP_CHECKSIG}
-     * @throws IllegalArgumentException if the address is malformed (bad length or checksum)
+     * @throws IllegalArgumentException if the address is malformed (bad length or
+     *         checksum) or its version byte is not the PIVX mainnet pubkey prefix
      */
     public static byte[] addressToP2pkhScript(String address) {
-        byte[] decoded = Base58.decodeChecked(address);
-        if (decoded.length != 21) {
-            throw new IllegalArgumentException("Invalid address length: " + decoded.length);
-        }
-        byte[] pkh = Arrays.copyOfRange(decoded, 1, 21);
+        byte[] pkh = addressToHash160(address);
         byte[] script = new byte[25];
         script[0] = (byte) 0x76; // OP_DUP
         script[1] = (byte) 0xa9; // OP_HASH160
@@ -68,12 +65,18 @@ public final class PivxAddress {
      *
      * @param address the base58check address
      * @return 20-byte hash160
-     * @throws IllegalArgumentException if malformed
+     * @throws IllegalArgumentException if malformed or not a PIVX mainnet pubkey address
      */
     public static byte[] addressToHash160(String address) {
         byte[] decoded = Base58.decodeChecked(address);
         if (decoded.length != 21) {
             throw new IllegalArgumentException("Invalid address length: " + decoded.length);
+        }
+        int version = decoded[0] & 0xff;
+        if (version != (PivxParams.PIVX_PUBKEY_PREFIX & 0xff)) {
+            throw new IllegalArgumentException("Not a PIVX mainnet transparent address"
+                    + " (version byte " + version + ", expected "
+                    + (PivxParams.PIVX_PUBKEY_PREFIX & 0xff) + "): " + address);
         }
         return Arrays.copyOfRange(decoded, 1, 21);
     }

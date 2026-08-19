@@ -81,11 +81,14 @@ public final class BlockbookClient {
      * @throws IOException if the node rejects the transaction or the response is malformed
      */
     public String sendTransaction(String txhex) throws IOException, InterruptedException {
+        // POST with the hex in the body: a GET would carry the whole tx in the
+        // URL, which breaks on large (multi-KB) transactions once the URI
+        // exceeds proxy/header limits.
         HttpRequest req = HttpRequest.newBuilder()
-                .uri(URI.create(baseUrl + "/api/v2/sendtx/" + txhex))
+                .uri(URI.create(baseUrl + "/api/v2/sendtx/"))
                 .header("Accept", "application/json")
                 .timeout(Duration.ofSeconds(30))
-                .GET()
+                .POST(HttpRequest.BodyPublishers.ofString(txhex))
                 .build();
 
         HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString());
