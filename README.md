@@ -51,9 +51,10 @@ Requirements: JDK 21+, Maven 3.9+ (wrapper included); Rust toolchain (cargo) for
 List<String> words = BIP39Service.generateMnemonic();
 String mnemonic = String.join(" ", words);
 
-// Parse an existing mnemonic
+// Parse an existing mnemonic (whitespace-tolerant, case-insensitive —
+// words are trimmed and lower-cased before seed derivation)
 List<String> parsed = BIP39Service.parse(mnemonic);
-byte[] seed = BIP39Service.toSeed(parsed); // 64-byte BIP39 seed
+byte[] seed = BIP39Service.toSeed(parsed); // 64-byte BIP39 seed (NFKD per BIP39)
 ```
 
 ### BIP32 — Transparent Key Derivation
@@ -74,7 +75,10 @@ String defaultAddress = TransparentKeys.getTransparentAddress(mnemonic);
 ### Addresses
 
 ```java
-// Encode/decode a transparent P2PKH address
+// Encode/decode a transparent P2PKH address. Decoding validates the
+// Base58Check version byte, so foreign-chain addresses (Bitcoin, Dash,
+// PIVX staking/testnet) throw IllegalArgumentException instead of being
+// accepted as a send destination.
 byte[] script  = PivxAddress.addressToP2pkhScript("DPo9TNv...");
 byte[] hash160 = PivxAddress.addressToHash160("DPo9TNv...");
 String address = PivxAddress.hash160ToAddress(hash160);
@@ -111,10 +115,18 @@ long feeSat  = result.fee();
 TransparentTransactionResult result2 = RawTransparentBuilder.createRawTransparentTransactionFromUtxos(
     seed, 0 /* change */, 3 /* hdIndex */, utxos, "DRecipientAddress...", 100_000_000L);
 
-// Multi-index: each UTXO signed with its own HD key (utxo.hdIndex())
+// Multi-index: each UTXO signed with its own HD key (utxo.hdIndex());
+// defaults to the external branch (change=0). Pass the branch explicitly
+// to spend internal-branch coins (all UTXOs must be on that one branch):
 TransparentTransactionResult result3 = RawTransparentBuilder.createRawTransparentTransactionMultiIndex(
     utxos, seed, "DRecipientAddress...", 100_000_000L);
+TransparentTransactionResult result4 = RawTransparentBuilder.createRawTransparentTransactionMultiIndex(
+    utxos, seed, "DRecipientAddress...", 100_000_000L, 1 /* change branch */);
 ```
+
+Change below the 546-sat dust threshold is folded into the fee (nodes reject
+sub-dust outputs as nonstandard), and `result.fee()` always reports the fee
+actually paid — including any changeless-selection surplus donated to miners.
 
 ### Fee Estimation
 
@@ -264,12 +276,16 @@ The Java implementation is **byte-compatible** with the Rust `pivx-wallet-kit`:
 ### Known upstream quirk (deliberate divergence)
 
 `ShieldStreamParser` groups footer-format streams strictly (txs always belong
-to the block of their closing 0x5d footer). The Rust kit's
-`sync::parse_next_blocks` instead attaches txs to the last already-committed
-block of the batch when both a committed block and new txs coexist —
-mis-grouping pure footer streams beyond the first block. jpivx follows
-MyPIVXWallet's `BinaryShieldSyncer` semantics (which match what PIVX Core
-REST actually serves); all other wire details are byte-identical with the kit.
+to the block of their closing 0x5d footer), telling the two marker formats
+apart by payload length (9-byte footer vs 5-byte header) so an empty block
+cannot shift later grouping. The Rust kit's `sync::parse_next_blocks` instead
+attaches txs to the last already-committed block of the batch when both a
+committed block and new txs coexist — mis-grouping pure footer streams beyond
+the first block. jpivx follows MyPIVXWallet's `BinaryShieldSyncer` semantics
+(which match what PIVX Core REST actually serves); all other wire details are
+byte-identical with the kit. Truncated streams (cut mid-length, mid-packet, or
+with txs missing their footer) raise `IOException` rather than being treated
+as clean EOF.
 
 ---
 
