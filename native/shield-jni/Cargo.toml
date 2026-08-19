@@ -1,0 +1,50 @@
+# JNI bridge between jpivx (Java) and the Rust pivx-wallet-kit.
+#
+# Exposes the Sapling key/address derivation from `pivx_wallet_kit::keys`
+# as JNI native methods on `dev.jpivx.wallet.crypto.ShieldKeys`.
+#
+# Built as a cdylib and bundled into the jpivx shaded JAR under
+# `native/<os>-<arch>/libjpivx_shield_jni.{dylib,so,dll}`.
+[package]
+name = "jpivx-shield-jni"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[lib]
+name = "jpivx_shield_jni"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Relative to <Tadu>/pivxvn/jpivx/native/shield-jni → <Tadu>/pivx-wallet-kit
+pivx-wallet-kit = { path = "../../../../pivx-wallet-kit" }
+jni = "0.21"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+zeroize = "1.8"
+
+[dev-dependencies]
+bip39 = "2"
+# For crafting a self-owned test note in build_real_shield_tx_offline.
+jubjub = "0.10"
+ff = "0.13"
+rand_core = { version = "0.6", features = ["std", "getrandom"] }
+sapling = { git = "https://github.com/Duddino/librustpivx", branch = "librustzcash-rebase" }
+pivx_primitives = { package = "zcash_primitives", git = "https://github.com/Duddino/librustpivx", branch = "librustzcash-rebase" }
+incrementalmerkletree = "0.7"
+
+# Must mirror pivx-wallet-kit's [patch.crates-io]: [patch] is only applied
+# from the workspace-root manifest, and this crate is its own root. Without
+# these pins the resolver picks yanked crates.io versions (core2, orchard)
+# that librustpivx transitively depends on.
+[patch.crates-io]
+orchard = { git = "https://github.com/zcash/orchard.git", rev = "c684e9185a0449efb00428f807d3bf286b5dae03" }
+redjubjub = { git = "https://github.com/ZcashFoundation/redjubjub", rev = "eae848c5c14d9c795d000dd9f4c4762d1aee7ee1" }
+bellman = { git = "https://github.com/Duddino/librustpivx", branch = "librustzcash-rebase" }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

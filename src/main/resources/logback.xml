@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} %-5level [%thread] %logger{20} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Redaction: replace sensitive substrings in log messages.
+         PIVX wallet never logs mnemonic/seed/privkey directly, but this
+         pattern acts as a defence-in-depth filter for any accidental leak. -->
+    <appender name="REDACTED" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} %-5level [%thread] %logger{20} - %replace(%msg){'mnemonic=[^ ]*', 'mnemonic=***REDACTED***'}%replace(%msg){'seed=[^ ]*', 'seed=***REDACTED***'}%replace(%msg){'privkey=[^ ]*', 'privkey=***REDACTED***'}%replace(%msg){'extsk=[^ ]*', 'extsk=***REDACTED***'}%n</pattern>
+        </encoder>
+    </appender>
+
+    <logger name="org.bitcoinj" level="WARN"/>
+
+    <root level="INFO">
+        <appender-ref ref="STDOUT"/>
+    </root>
+</configuration>
