@@ -275,4 +275,4 @@ REST actually serves); all other wire details are byte-identical with the kit.
 
 ## License
 
-MIT (same as the upstream Rust `pivx-wallet-kit`).
+[MIT](LICENSE) (same as the upstream Rust `pivx-wallet-kit`).

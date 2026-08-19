@@ -11,6 +11,14 @@
     <name>wallet-kit</name>
     <description>PIVX Wallet Kit — Java library for building PIVX wallets (transparent + Sapling shield via JNI)</description>
 
+    <licenses>
+        <license>
+            <name>MIT License</name>
+            <url>https://opensource.org/licenses/MIT</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
     <properties>
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
