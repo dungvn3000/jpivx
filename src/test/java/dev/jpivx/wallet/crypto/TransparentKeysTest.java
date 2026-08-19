@@ -4,10 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Port of {@code derive_transparent_address_from_mnemonic} and
@@ -79,7 +76,7 @@ class TransparentKeysTest {
         assertTrue(key.address().startsWith("D"));
         assertEquals(34, key.address().length());
         // Different index → different address from the default.
-        assertTrue(!key.address().equals(EXPECTED_ADDRESS));
+        assertNotEquals(EXPECTED_ADDRESS, key.address());
     }
 
     @Test
@@ -89,8 +86,7 @@ class TransparentKeysTest {
                 TransparentKeys.transparentKeyFromBip39Seed(seed, 0, 0);
         TransparentKeys.TransparentKey internal =
                 TransparentKeys.transparentKeyFromBip39Seed(seed, 1, 0);
-        assertTrue(!external.address().equals(internal.address()),
-                "external (change=0) and internal (change=1) branches must differ");
+        assertNotEquals(external.address(), internal.address(), "external (change=0) and internal (change=1) branches must differ");
     }
 
     @Test
@@ -99,4 +95,5 @@ class TransparentKeysTest {
         TransparentKeys.zeroize(priv);
         assertArrayEquals(new byte[8], priv);
     }
+
 }
