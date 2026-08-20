@@ -210,8 +210,10 @@ String txhex = result.txhex();
 state.removeSpentNotes(result.nullifiers());
 saveState(state);
 
-// Optional — subtract-fee sends: find the recipient amount such that
-// recipient + fee == budget (fee depends on note selection, solved by fixpoint)
+// Optional — subtract-fee / send-max: the largest recipient amount with
+// recipient + fee <= budget (== budget when it's fully consumable; the fee
+// depends on note selection, so it's solved by binary search against the
+// kit's own selection)
 long sendAmount = ShieldSendService.resolveSubtractFeeAmount(
     state.getUnspentNotes(), budgetSat, "ps124f3dxh...");
 ```
@@ -263,6 +265,12 @@ Constraints inherited from the Rust kit's `create_shielding_transaction`:
 The parsed Groth16 prover is cached natively per parameter-path pair, so only
 the first build in a process pays the ~50 MB read + SHA256 + parse.
 
+Lower-level: `ShieldSendService.buildWalletJson(mnemonic, birthday, state, utxos)`
+produces the UTXO-carrying `WalletData` JSON, and
+`ShieldKeys.createShieldingTransaction(...)` takes it directly — the signing
+seed is derived natively from the wallet's own mnemonic, and foreign
+`hd_index` tags are rejected natively on this path too.
+
 ---
 
 ## Architecture
@@ -270,7 +278,8 @@ the first build in a process pays the ~50 MB read + SHA256 + parse.
 ```
 jpivx/
 ├── native/shield-jni/           Rust JNI bridge (cdylib libjpivx_shield_jni)
-│   └── src/lib.rs               JNI exports → pivx_wallet_kit::keys (Sapling)
+│   └── src/lib.rs               JNI exports → pivx_wallet_kit keys/sync/builders
+│                                (Sapling + shielding; cached Groth16 prover)
 ├── native/build-native.sh       cargo build + copy cdylib into resources
 └── src/main/java/dev/jpivx/wallet/
     ├── core/                    PivxParams, PivAmount, FeeEstimator, VarInt, Utxo
@@ -283,6 +292,7 @@ jpivx/
     │                            TransparentTransactionResult
     ├── shield/                  ShieldState, ShieldSyncService, ShieldSendService,
     │                            ShieldingService (transparent→shield),
+    │                            SubtractFee (shared send-max solver),
     │                            ShieldStreamParser, ShieldBlock, HandleBlocksResult,
     │                            SerializedNote, ShieldSelection, ShieldTxResult,
     │                            SaplingParams
@@ -300,6 +310,9 @@ The Java implementation is **byte-compatible** with the Rust `pivx-wallet-kit`:
 - Same mnemonic → same shield extfvk (`pxviews1...`) and default shield address
   (`ps124f3dxh...` for the shared BIP39 test vector) — golden values asserted in
   `ShieldKeysTest`, produced by the kit itself over JNI
+- Shield and shielding sends assert the kit's golden fees and tx shapes on both
+  sides of the bridge (`ShieldSendFullJniTest` / `ShieldingJniTest` in Java,
+  `build_real_shield_tx_offline` / `build_real_shielding_tx_offline` in Rust)
 
 ---
 
