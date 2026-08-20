@@ -9,6 +9,7 @@ import java.util.Arrays;
 import java.util.List;
 
 import dev.jpivx.wallet.core.PivAmount;
+import dev.jpivx.wallet.core.Utxo;
 import dev.jpivx.wallet.crypto.BIP39Service;
 import dev.jpivx.wallet.crypto.ShieldKeys;
 
@@ -85,7 +86,9 @@ public final class ShieldSendService {
      *
      * <p>Field-for-field identical to the kit's serde form: 32-byte seed array,
      * bech32 extfvk, heights, commitment tree, unspent notes, normalized
-     * mnemonic, and (always empty here) transparent UTXO list.
+     * mnemonic, and an (empty) transparent UTXO list — shield sends spend
+     * notes only. Use {@link #buildWalletJson(String, int, ShieldState, List)}
+     * to hand the builder transparent UTXOs for a shielding (t&rarr;z) send.
      *
      * @param mnemonic       BIP39 mnemonic phrase
      * @param birthdayHeight wallet birthday block height
@@ -96,6 +99,19 @@ public final class ShieldSendService {
      */
     public static String buildWalletJson(String mnemonic, int birthdayHeight, ShieldState state)
             throws IOException {
+        return buildWalletJson(mnemonic, birthdayHeight, state, List.of());
+    }
+
+    /**
+     * Same as {@link #buildWalletJson(String, int, ShieldState)} but also
+     * carries the wallet's transparent UTXOs — the form
+     * {@link dev.jpivx.wallet.crypto.ShieldKeys#createShieldingTransaction}
+     * needs, since a shielding tx spends from {@code unspent_utxos}.
+     *
+     * @param utxos transparent UTXOs to expose to the builder (may be empty)
+     */
+    public static String buildWalletJson(String mnemonic, int birthdayHeight, ShieldState state,
+                                         List<Utxo> utxos) throws IOException {
         byte[] seed64 = BIP39Service.toSeed(BIP39Service.parse(mnemonic));
         // Kit's WalletData::seed is [u8; 32] — the first half of the BIP39 seed.
         byte[] seed32 = Arrays.copyOf(seed64, 32);
@@ -113,12 +129,16 @@ public final class ShieldSendService {
         wallet.put("commitment_tree", state.getCommitmentTree());
         wallet.put("unspent_notes", SerializedNote.toJsonArray(state.getUnspentNotes()));
         wallet.put("mnemonic", BIP39Service.normalize(mnemonic));
-        wallet.put("unspent_utxos", new JsonArray());
+        JsonArray utxoArr = new JsonArray();
+        for (Utxo u : utxos) {
+            utxoArr.add(u.toJson());
+        }
+        wallet.put("unspent_utxos", utxoArr);
         return JsonWriter.string(wallet);
     }
 
     // ---------------------------------------------------------------------
-    // Subtract-fee fixpoint
+    // Subtract-fee / send-max
     // ---------------------------------------------------------------------
 
     /**
@@ -138,41 +158,48 @@ public final class ShieldSendService {
     }
 
     /**
-     * Fixpoint for {@code --subtract-fee}: given a total {@code budgetSat},
-     * find the recipient amount such that {@code recipient + fee == budgetSat},
-     * where the fee is the builder's EXACT fee for the notes it will select.
-     *
-     * <p>The fee depends on how many notes the selection pulls in, and the
-     * selection depends on the amount — so we iterate {@code selectShieldNotes}
-     * until the fee stops changing. The sequence is monotone and bounded
-     * (fee values live in a finite set of per-input-count fees), so a few
-     * iterations always converge.
+     * Solve {@code --subtract-fee} / send-max: the largest recipient amount
+     * {@code a} the builder can actually send with {@code a + fee <= budgetSat},
+     * where the fee is the builder's EXACT fee for the notes it will select
+     * for {@code a}. Equals {@code budgetSat - fee} whenever the budget is
+     * fully consumable; solved by {@link SubtractFee} (binary search — the
+     * fee is a step function of the amount, so a naive fixpoint can
+     * oscillate).
      *
      * @param notesJson  JSON array of the kit's {@code SerializedNote} shape
      * @param budgetSat  total sats the wallet may lose (recipient + fee)
      * @param tOut       transparent outputs (see {@link #transparentOuts})
      * @return the amount to pass to the builder (what the recipient receives)
-     * @throws IllegalArgumentException if {@code budgetSat} cannot cover the
-     *         smallest possible shield fee
+     * @throws IllegalArgumentException if {@code budgetSat} exceeds the notes'
+     *         total value or cannot cover the smallest possible shield fee
      */
     public static long resolveSubtractFeeAmount(String notesJson, long budgetSat, long tOut)
             throws IOException {
-        // Minimal one-spend fee: a 0-sat target selects exactly one note.
-        long fee = selectShieldFee(notesJson, 0, tOut);
-        for (int i = 0; i < 64; i++) {
-            long sendAmount = budgetSat - fee;
-            if (sendAmount <= 0) {
-                throw new IllegalArgumentException("Amount " + PivAmount.formatSatToPiv(budgetSat)
-                        + " is too small to cover the shield fee "
-                        + PivAmount.formatSatToPiv(fee) + ".");
-            }
-            long newFee = selectShieldFee(notesJson, sendAmount, tOut);
-            if (newFee == fee) {
-                return sendAmount;
-            }
-            fee = newFee;
+        return SubtractFee.resolve(budgetSat, totalNoteValue(notesJson), "shield",
+                amountSat -> selectShieldFee(notesJson, amountSat, tOut));
+    }
+
+    /** Sum of {@code note.value} across a kit-shaped notes JSON array. */
+    private static long totalNoteValue(String notesJson) throws IOException {
+        JsonArray notes;
+        try {
+            notes = com.grack.nanojson.JsonParser.array().from(notesJson);
+        } catch (com.grack.nanojson.JsonParserException e) {
+            throw new IOException("malformed notes JSON: " + e.getMessage(), e);
         }
-        throw new IllegalStateException("shield fee selection did not converge after 64 rounds");
+        long total = 0;
+        for (int i = 0; i < notes.size(); i++) {
+            JsonObject note = notes.getObject(i) == null
+                    ? null : notes.getObject(i).getObject("note");
+            long value = note == null ? 0 : note.getLong("value", 0);
+            try {
+                total = Math.addExact(total, value);
+            } catch (ArithmeticException e) {
+                throw new IllegalArgumentException(
+                        "note total overflow — malformed note values");
+            }
+        }
+        return total;
     }
 
     /** One JNI selection round — returns the builder-charged fee. */

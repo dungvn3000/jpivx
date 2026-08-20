@@ -1,6 +1,8 @@
 /**
- * Shield (Sapling) sync: binary stream parsing, batch orchestration, and the
- * JNI {@code handle_blocks} result types.
+ * Shield (Sapling) sync and spending: binary stream parsing, batch
+ * orchestration, the JNI {@code handle_blocks} result types, and the two send
+ * facades — {@link dev.jpivx.wallet.shield.ShieldSendService} (spend notes)
+ * and {@link dev.jpivx.wallet.shield.ShieldingService} (transparent&rarr;shield).
  *
  * <p>{@link dev.jpivx.wallet.shield.ShieldStreamParser} is a byte-faithful port
  * of the Rust kit's {@code sync::parse_next_blocks};

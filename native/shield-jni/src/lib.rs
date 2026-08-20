@@ -1,5 +1,6 @@
-//! JNI bridge: exposes Sapling shield functionality (key/address derivation
-//! and shield block sync) from the Rust `pivx-wallet-kit` to
+//! JNI bridge: exposes Sapling shield functionality (key/address derivation,
+//! shield block sync, and the two proving builders — shield spends and
+//! transparent->shield shielding) from the Rust `pivx-wallet-kit` to
 //! `dev.jpivx.wallet.crypto.ShieldKeys` on the Java side.
 //!
 //! Derivation mirrors `wallet::create_wallet_from_mnemonic` and `keys::*`:
@@ -26,6 +27,9 @@ use pivx_wallet_kit::keys;
 use pivx_wallet_kit::sapling::builder::{create_shield_transaction, select_shield_notes};
 use pivx_wallet_kit::sapling::prover::verify_and_load_params;
 use pivx_wallet_kit::sapling::sync::{handle_blocks, ShieldBlock};
+use pivx_wallet_kit::sapling::prover::SaplingProver;
+use pivx_wallet_kit::transparent::builder::{create_shielding_transaction, select_shielding_utxos};
+use std::sync::{Arc, Mutex};
 use pivx_wallet_kit::wallet::{SerializedNote, WalletData};
 
 /// Run `f` with the JNIEnv, converting any error/panic into a thrown Java
@@ -72,6 +76,69 @@ fn seed32_from_jbyte_array(
     let mut seed = [0u8; 32];
     seed.copy_from_slice(&bytes[..32]);
     Ok(seed)
+}
+
+/// Reject wallet JSON whose UTXOs are tagged (via jpivx's `Utxo.hd_index`
+/// field — which the kit's `SerializedUTXO` would silently drop during
+/// deserialization) as belonging to a non-default HD slot.
+/// `create_shielding_transaction` signs every input with the key at
+/// `m/44'/119'/0'/0/0`; a foreign-slot UTXO would yield a structurally
+/// valid but invalidly signed transaction, caught only at broadcast.
+fn reject_foreign_hd_utxos(wallet_json: &str) -> Result<(), Box<dyn Error>> {
+    #[derive(serde::Deserialize)]
+    struct UtxoTag {
+        #[serde(default)]
+        txid: String,
+        #[serde(default)]
+        vout: u32,
+        #[serde(default)]
+        hd_index: u32,
+    }
+    #[derive(serde::Deserialize)]
+    struct WalletTags {
+        #[serde(default)]
+        unspent_utxos: Vec<UtxoTag>,
+    }
+    let tags: WalletTags = serde_json::from_str(wallet_json)?;
+    for u in &tags.unspent_utxos {
+        if u.hd_index != 0 {
+            return Err(format!(
+                "shielding spends only UTXOs on the default address m/44'/119'/0'/0/0, \
+                 but {}:{} is tagged hd_index={}",
+                u.txid, u.vout, u.hd_index
+            )
+            .into());
+        }
+    }
+    Ok(())
+}
+
+/// One-slot cache for the parsed Groth16 prover, keyed by the
+/// `(spend, output)` parameter paths — see [`load_prover`].
+static PROVER_CACHE: Mutex<Option<((String, String), Arc<SaplingProver>)>> = Mutex::new(None);
+
+/// Read, SHA256-verify, and parse the Sapling proving parameters, caching
+/// the result per path pair: without the cache a long-lived wallet process
+/// re-reads and re-hashes ~50 MB of parameter files for every transaction.
+/// Caching after verification is safe — a file corrupted later on disk can
+/// no longer affect the already-loaded prover.
+fn load_prover(spend_path: &str, output_path: &str) -> Result<Arc<SaplingProver>, Box<dyn Error>> {
+    let key = (spend_path.to_owned(), output_path.to_owned());
+    {
+        let cache = PROVER_CACHE.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some((cached_key, prover)) = cache.as_ref() {
+            if *cached_key == key {
+                return Ok(Arc::clone(prover));
+            }
+        }
+    }
+    let spend_bytes = std::fs::read(spend_path)
+        .map_err(|e| format!("cannot read spend params at {spend_path}: {e}"))?;
+    let output_bytes = std::fs::read(output_path)
+        .map_err(|e| format!("cannot read output params at {output_path}: {e}"))?;
+    let prover = Arc::new(verify_and_load_params(&output_bytes, &spend_bytes)?);
+    *PROVER_CACHE.lock().unwrap_or_else(|p| p.into_inner()) = Some((key, Arc::clone(&prover)));
+    Ok(prover)
 }
 
 /// JSON wire shape for one block of shield data coming from Java.
@@ -272,11 +339,7 @@ pub extern "system" fn Java_dev_jpivx_wallet_crypto_ShieldKeys_nativeCreateShiel
             return Err("insufficient shield balance: no notes available".into());
         }
 
-        let spend_bytes = std::fs::read(&spend_path)
-            .map_err(|e| format!("cannot read spend params at {spend_path}: {e}"))?;
-        let output_bytes = std::fs::read(&output_path)
-            .map_err(|e| format!("cannot read output params at {output_path}: {e}"))?;
-        let prover = verify_and_load_params(&output_bytes, &spend_bytes)?;
+        let prover = load_prover(&spend_path, &output_path)?;
 
         let result = create_shield_transaction(
             &mut wallet,
@@ -288,6 +351,135 @@ pub extern "system" fn Java_dev_jpivx_wallet_crypto_ShieldKeys_nativeCreateShiel
         )?;
 
         let out = serde_json::to_string(&result)?;
+        let jstr = env.new_string(out)?;
+        Ok(jstr.into_raw())
+    })
+    .unwrap_or(std::ptr::null_mut())
+}
+
+/// Build and sign a *shielding* transaction: transparent UTXOs → shield output.
+///
+/// The mirror image of `nativeCreateShieldTransaction`. Inputs are the
+/// wallet's transparent UTXOs (`WalletData.unspent_utxos`), the destination
+/// must be a `ps1...` shield address, and any change goes back out as a
+/// transparent output — the kit's
+/// `transparent::builder::create_shielding_transaction`.
+///
+/// Every input is signed with the key at `m/44'/119'/0'/0/0`, so all UTXOs
+/// must belong to that address — enforced here by rejecting UTXOs tagged
+/// with a non-zero jpivx `hd_index` (see [`reject_foreign_hd_utxos`]).
+/// The signing seed is derived from the wallet's own mnemonic
+/// (`WalletData::get_bip39_seed`), so seed and UTXO set can never disagree.
+///
+/// Inputs:
+/// - `wallet_json` — the kit's `WalletData` shape, carrying `unspent_utxos`
+///   and the commitment tree the Sapling anchor is read from,
+/// - `to_address` — `ps1...` destination,
+/// - `amount_sat` — what the shield recipient receives,
+/// - `block_height` — chain tip (expiry / anchor context),
+/// - the two Groth16 parameter paths (SHA256-verified against the kit's
+///   pins on first use, then served from [`load_prover`]'s cache).
+///
+/// Returns the kit's `TransparentTransactionResult` as JSON —
+/// `{txhex, spent: [{txid, vout}], amount, fee}`.
+///
+/// Java signature:
+/// `static native String nativeCreateShieldingTransaction(String walletJson, String toAddress, long amountSat, long blockHeight, String spendParamsPath, String outputParamsPath)`
+#[no_mangle]
+pub extern "system" fn Java_dev_jpivx_wallet_crypto_ShieldKeys_nativeCreateShieldingTransaction(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_json: JString,
+    to_address: JString,
+    amount_sat: jlong,
+    block_height: jlong,
+    spend_params_path: JString,
+    output_params_path: JString,
+) -> jstring {
+    guard(&mut env, |env| {
+        let wallet_json: String = env.get_string(&wallet_json)?.into();
+        let to_address: String = env.get_string(&to_address)?.into();
+        let spend_path: String = env.get_string(&spend_params_path)?.into();
+        let output_path: String = env.get_string(&output_params_path)?.into();
+
+        if !(0..=u32::MAX as i64).contains(&block_height) {
+            return Err(format!("block_height out of u32 range: {block_height}").into());
+        }
+        if amount_sat <= 0 {
+            return Err(format!("amount out of range: {amount_sat}").into());
+        }
+
+        // wallet_json carries the plaintext seed + mnemonic over the JNI
+        // boundary: wrap in Zeroizing so its buffer is wiped on drop.
+        let wallet_json = zeroize::Zeroizing::new(wallet_json);
+        reject_foreign_hd_utxos(&wallet_json)?;
+        let mut wallet: WalletData = serde_json::from_str(&wallet_json)?;
+
+        // Fast-fail before the expensive parameter load: with no UTXOs
+        // there is nothing to spend. Mirrors the builder's own message.
+        if wallet.unspent_utxos.is_empty() {
+            return Err("No transparent UTXOs available".into());
+        }
+
+        // Full 64-byte BIP39 seed for transparent BIP32 derivation, from the
+        // wallet's own mnemonic (Zeroizing; wiped on drop).
+        let seed = wallet.get_bip39_seed()?;
+
+        let prover = load_prover(&spend_path, &output_path)?;
+
+        let result = create_shielding_transaction(
+            &mut wallet,
+            &seed,
+            &to_address,
+            amount_sat as u64,
+            block_height as u32,
+            &prover,
+        )?;
+
+        let out = serde_json::to_string(&result)?;
+        let jstr = env.new_string(out)?;
+        Ok(jstr.into_raw())
+    })
+    .unwrap_or(std::ptr::null_mut())
+}
+
+/// Quote the UTXO selection a shielding send would make — the exact greedy
+/// pass and fee `create_shielding_transaction` will charge, via the kit's
+/// pure `select_shielding_utxos`. No keys, no params, no network.
+///
+/// Java loops this to solve subtract-fee/send-max amounts, mirroring how
+/// `nativeSelectShieldNotes` powers the shield-side fixpoint.
+///
+/// Inputs: `utxos_json` — JSON array of the kit's `SerializedUTXO` shape
+/// (jpivx's extra `hd_index` field is ignored here — selection does not
+/// sign); `amount_sat` — target recipient amount.
+///
+/// Returns `{inputs, total, fee}` as JSON. Errors (as thrown
+/// `IllegalArgumentException`) when the UTXOs cannot cover `amount + fee` —
+/// same wording as the builder.
+///
+/// Java signature: `static native String nativeSelectShieldingUtxos(String utxosJson, long amountSat)`
+#[no_mangle]
+pub extern "system" fn Java_dev_jpivx_wallet_crypto_ShieldKeys_nativeSelectShieldingUtxos(
+    mut env: JNIEnv,
+    _class: JClass,
+    utxos_json: JString,
+    amount_sat: jlong,
+) -> jstring {
+    guard(&mut env, |env| {
+        let utxos_json: String = env.get_string(&utxos_json)?.into();
+        if amount_sat < 0 {
+            return Err(format!("amount out of range: {amount_sat}").into());
+        }
+        let utxos: Vec<pivx_wallet_kit::wallet::SerializedUTXO> =
+            serde_json::from_str(&utxos_json)?;
+        let selection = select_shielding_utxos(&utxos, amount_sat as u64)?;
+        let out = serde_json::json!({
+            "inputs": selection.selected.len(),
+            "total": selection.total,
+            "fee": selection.fee,
+        })
+        .to_string();
         let jstr = env.new_string(out)?;
         Ok(jstr.into_raw())
     })
@@ -513,5 +705,107 @@ mod tests {
         assert_eq!(bundle.shielded_outputs().len(), 2, "dest + change");
         assert_eq!(result.amount, 5_000_000);
         assert_eq!(result.nullifiers.len(), 1);
+    }
+
+    /// The hd_index guard: jpivx tags UTXOs with the HD slot they sit on;
+    /// the kit's SerializedUTXO drops the field, so the JNI layer must
+    /// reject foreign-slot UTXOs before they get signed with the wrong key.
+    #[test]
+    fn foreign_hd_index_utxos_are_rejected() {
+        // Untagged / index-0 UTXOs pass.
+        assert!(crate::reject_foreign_hd_utxos(
+            r#"{"unspent_utxos":[{"txid":"aa","vout":0,"amount":1,"script":"","height":1}]}"#
+        )
+        .is_ok());
+        assert!(crate::reject_foreign_hd_utxos(
+            r#"{"unspent_utxos":[{"txid":"aa","vout":0,"amount":1,"script":"","height":1,"hd_index":0}]}"#
+        )
+        .is_ok());
+        // No UTXO list at all passes (guard only cares about tags).
+        assert!(crate::reject_foreign_hd_utxos("{}").is_ok());
+
+        // A foreign slot is rejected with the offending outpoint in the message.
+        let err = crate::reject_foreign_hd_utxos(
+            r#"{"unspent_utxos":[{"txid":"bb","vout":3,"amount":1,"script":"","height":1,"hd_index":7}]}"#
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("hd_index=7"), "{err}");
+        assert!(err.contains("bb:3"), "{err}");
+    }
+
+    /// Full offline E2E of the shielding path (transparent → shield): hand the
+    /// wallet a synthetic UTXO on its own transparent address and build + sign
+    /// a real Groth16-proven t→z tx through the same kit entry point
+    /// `nativeCreateShieldingTransaction` calls. Validly signed but not
+    /// broadcastable (the UTXO does not exist on chain) — the point is to
+    /// exercise selection, proving, signing and serialization.
+    ///
+    /// Gated on the Sapling params being cached at `~/.pivx-wallet/params/`.
+    #[test]
+    fn build_real_shielding_tx_offline() {
+        use pivx_wallet_kit::wallet::{self as kit_wallet, SerializedUTXO, WalletData};
+        use pivx_wallet_kit::simd;
+
+        let home = std::env::var("HOME").unwrap();
+        let spend_path = format!("{home}/.pivx-wallet/params/sapling-spend.params");
+        let output_path = format!("{home}/.pivx-wallet/params/sapling-output.params");
+        let (Ok(spend_bytes), Ok(output_bytes)) =
+            (std::fs::read(&spend_path), std::fs::read(&output_path))
+        else {
+            eprintln!("SKIP build_real_shielding_tx_offline: params not at {spend_path}");
+            return;
+        };
+        let prover = pivx_wallet_kit::sapling::prover::verify_and_load_params(
+            &output_bytes,
+            &spend_bytes,
+        )
+        .unwrap();
+
+        let mnemonic = bip39::Mnemonic::parse_normalized(TEST_MNEMONIC).unwrap();
+        let bip39_seed = mnemonic.to_seed("");
+
+        let mut wallet = kit_wallet::import_wallet(TEST_MNEMONIC, 5_000_000).unwrap();
+        wallet.unspent_utxos.push(SerializedUTXO {
+            txid: "a".repeat(64),
+            vout: 0,
+            amount: 500_000_000, // 5 PIV, on m/44'/119'/0'/0/0
+            script: String::new(),
+            height: 5_000_000,
+        });
+
+        // JSON round-trip: exactly what Java hands over JNI.
+        let wallet_json = serde_json::to_string(&wallet).unwrap();
+        let mut wallet_rt: WalletData = serde_json::from_str(&wallet_json).unwrap();
+
+        let dest = keys::get_default_address(&wallet.extfvk).unwrap();
+        let result = pivx_wallet_kit::transparent::builder::create_shielding_transaction(
+            &mut wallet_rt,
+            &bip39_seed,
+            &dest,
+            100_000_000,
+            5_000_001,
+            &prover,
+        )
+        .unwrap();
+
+        eprintln!("GOLDEN shielding txhex = {}...", &result.txhex[..80]);
+        eprintln!("GOLDEN shielding fee   = {}", result.fee);
+
+        // 1000 sat/byte × (1 t-input + 2 sapling outputs + overhead).
+        assert_eq!(result.fee, 2_176_000);
+        assert_eq!(result.amount, 100_000_000);
+        assert_eq!(result.spent.len(), 1);
+
+        let tx = pivx_primitives::transaction::Transaction::read(
+            std::io::Cursor::new(simd::hex::hex_string_to_bytes(&result.txhex)),
+            pivx_primitives::consensus::BranchId::Sapling,
+        )
+        .unwrap();
+        let bundle = tx.sapling_bundle().expect("sapling bundle present");
+        assert!(bundle.shielded_spends().is_empty(), "no shield spends");
+        assert!(!bundle.shielded_outputs().is_empty(), "shield output present");
+        let t_bundle = tx.transparent_bundle().expect("transparent bundle present");
+        assert_eq!(t_bundle.vin.len(), 1, "one transparent input");
     }
 }

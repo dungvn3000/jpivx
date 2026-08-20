@@ -25,8 +25,10 @@ import dev.jpivx.wallet.core.Utxo;
  * Sapling data, so pure transparent→transparent sends take this legacy v1 path
  * signed with ECDSA / SIGHASH_ALL. No Sapling prover is touched.
  *
- * <p>Shield destinations ({@code ps1...}) are rejected — they require the
- * Sapling prover, which is not available in this transparent-only build.
+ * <p>Shield destinations ({@code ps1...}) are rejected here — they need a
+ * Sapling output bundle and its Groth16 proof. Use
+ * {@code dev.jpivx.wallet.shield.ShieldingService} for transparent&rarr;shield
+ * sends.
  */
 public final class RawTransparentBuilder {
 
@@ -34,10 +36,10 @@ public final class RawTransparentBuilder {
         throw new AssertionError("no instances");
     }
 
-    /** Error thrown when a shield destination is requested (deferred to the FFI phase). */
+    /** Error thrown when a shield destination is requested (this builder has no prover). */
     public static final String SHIELD_DEST_ERROR =
-            "Shield destination requires a Sapling prover (not available in transparent-only build) "
-                    + "— use a D... transparent address instead";
+            "Shield destination requires a Sapling prover — use ShieldingService.createTransaction "
+                    + "for ps1... destinations, or a D... transparent address here";
 
     /**
      * Build a signed v1 P2PKH transaction spending a caller-supplied set of UTXOs

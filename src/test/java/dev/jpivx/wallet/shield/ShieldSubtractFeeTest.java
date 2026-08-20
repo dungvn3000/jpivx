@@ -76,9 +76,28 @@ class ShieldSubtractFeeTest {
 
     @Test
     @EnabledIf("shieldAvailable")
-    void insufficientNotesSurfaceKitError() {
-        // Budget bigger than all notes combined → kit's "insufficient shield balance".
-        assertThrows(IllegalArgumentException.class, () ->
+    void budgetBeyondNoteTotalErrors() {
+        // Budget bigger than all notes combined → caller error (stale balance),
+        // rejected before any selection round.
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () ->
                 ShieldSendService.resolveSubtractFeeAmount(notesJson(1_000L), 1_000_000_000L, 0));
+        assertTrue(ex.getMessage().contains("exceeds the spendable"), ex.getMessage());
+    }
+
+    /**
+     * The step-boundary window that broke the old fee-fixpoint: a full-balance
+     * budget where the 1-spend guess overshoots what one note can cover. The
+     * solver must land on the 2-spend amount (recipient + fee == budget)
+     * instead of erroring out of the kit's selection.
+     */
+    @Test
+    @EnabledIf("shieldAvailable")
+    void sendMaxAcrossFeeStepFindsFeasibleAmount() throws Exception {
+        // Notes 400M + 500M, budget = whole balance 900M.
+        //   1-spend guess: send 900M − 2.38M = 897.62M → needs both notes,
+        //   but 900M < 897.62M + 2.764M → the old loop died here.
+        long send = ShieldSendService.resolveSubtractFeeAmount(
+                notesJson(400_000_000L, 500_000_000L), 900_000_000L, 0);
+        assertEquals(900_000_000L - FEE_2_SPENDS, send);
     }
 }

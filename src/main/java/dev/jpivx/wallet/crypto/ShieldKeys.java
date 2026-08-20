@@ -165,6 +165,61 @@ public final class ShieldKeys {
     }
 
     /**
+     * Build and sign a <em>shielding</em> transaction — transparent UTXOs in,
+     * shield output out — through the Rust kit's
+     * {@code transparent::builder::create_shielding_transaction}.
+     *
+     * <p>The mirror image of {@link #createShieldTransaction}: the inputs are
+     * the wallet's transparent UTXOs ({@code unspent_utxos} in {@code walletJson}),
+     * the destination must be a {@code ps1...} address, and change goes back
+     * as a transparent output. UTXO selection (largest first) and the fee are
+     * decided by the kit.
+     *
+     * <p>Every input is signed with the key at {@code m/44'/119'/0'/0/0} —
+     * the native side rejects UTXOs tagged with a non-zero
+     * {@code hd_index}, and derives the signing seed from the wallet's own
+     * mnemonic inside {@code walletJson}, so the seed and the UTXO set can
+     * never disagree.
+     *
+     * @param walletJson       the kit's {@code WalletData} shape, carrying the
+     *                         transparent UTXOs, the mnemonic, and the
+     *                         commitment tree
+     * @param toAddress        {@code ps1...} shield destination
+     * @param amountSat        amount the shield recipient receives, in satoshi
+     * @param blockHeight      chain tip (expiry / anchor context)
+     * @param spendParamsPath  path to {@code sapling-spend.params}
+     * @param outputParamsPath path to {@code sapling-output.params} (both
+     *                         SHA256-verified on first use, then cached)
+     * @return the kit's {@code TransparentTransactionResult} as JSON —
+     *         {@code {txhex, spent, amount, fee}}
+     */
+    public static String createShieldingTransaction(String walletJson, String toAddress,
+                                                    long amountSat, long blockHeight,
+                                                    String spendParamsPath,
+                                                    String outputParamsPath) {
+        requireAvailable();
+        return nativeCreateShieldingTransaction(walletJson, toAddress, amountSat,
+                blockHeight, spendParamsPath, outputParamsPath);
+    }
+
+    /**
+     * Quote the UTXO selection a shielding send would make — the exact
+     * greedy pass and fee {@link #createShieldingTransaction} will be
+     * charged, via the kit's pure {@code select_shielding_utxos}. No keys,
+     * no params, no network.
+     *
+     * @param utxosJson JSON array of the kit's {@code SerializedUTXO} shape
+     * @param amountSat target recipient amount
+     * @return JSON {@code {inputs, total, fee}}
+     * @throws IllegalArgumentException when the UTXOs cannot cover
+     *         {@code amount + fee} (same wording as the builder)
+     */
+    public static String selectShieldingUtxos(String utxosJson, long amountSat) {
+        requireAvailable();
+        return nativeSelectShieldingUtxos(utxosJson, amountSat);
+    }
+
+    /**
      * Select which shield notes would be spent for an amount — the exact same
      * selection and fee the tx builder would charge. Pure (no params, no network).
      *
@@ -199,6 +254,12 @@ public final class ShieldKeys {
     private static native String nativeCreateShieldTransaction(
             String walletJson, String toAddress, long amountSat, String memo,
             long blockHeight, String spendParamsPath, String outputParamsPath);
+
+    private static native String nativeCreateShieldingTransaction(
+            String walletJson, String toAddress, long amountSat,
+            long blockHeight, String spendParamsPath, String outputParamsPath);
+
+    private static native String nativeSelectShieldingUtxos(String utxosJson, long amountSat);
 
     private static native String nativeSelectShieldNotes(
             String notesJson, long amountSat, long transparentOuts, long saplingOuts);

@@ -1,6 +1,6 @@
 # jpivx — PIVX Wallet Kit (Java)
 
-A Java library for building PIVX wallets. Pure-Java transparent layer (BIP39/BIP32, P2PKH addresses, message signing, v1 transaction building) ported from the Rust [pivx-wallet-kit](https://github.com/PIVX-Labs/pivx-wallet-kit). Shield (Sapling) key derivation, sync, and spending are provided through a JNI bridge to the Rust kit.
+A Java library for building PIVX wallets. Pure-Java transparent layer (BIP39/BIP32, P2PKH addresses, message signing, v1 transaction building) ported from the Rust [pivx-wallet-kit](https://github.com/PIVX-Labs/pivx-wallet-kit). Shield (Sapling) key derivation, sync, spending, and shielding (transparent→shield) are provided through a JNI bridge to the Rust kit.
 
 - **Java 21**, BouncyCastle crypto (no bitcoinj — BIP32/BIP39/ECDSA implemented internally)
 - Cross-verified **byte-identical** with the Rust kit (same addresses, same signatures, same txhex, same shield extfvk/addresses)
@@ -140,6 +140,7 @@ long feeSat = FeeEstimator.estimateRawTransparentFee(inputCount, outputCount);
 // Shield fee (kit's fees::estimate_fee): 1000 sat/byte over a size model of
 // (s_out×948 + s_in×384 + t_in×180 + t_out×34 + 100) bytes
 // e.g. 1-spend shield→shield (2 sapling outs) = 2,380,000 sat (0.0238 PIV)
+//      1-input transparent→shield             = 2,176,000 sat (0.0218 PIV)
 long shieldFee = FeeEstimator.estimateFee(tIn, tOut, sIn, sOut);
 ```
 
@@ -219,6 +220,49 @@ Lower-level entry points remain available: `ShieldSendService.buildWalletJson(..
 produces the kit's `WalletData` JSON, and `ShieldKeys.createShieldTransaction(...)`
 takes it directly for full control over the JNI call.
 
+### Shielding: Transparent → Shield (JNI + Groth16)
+
+The mirror image of a shield send: transparent UTXOs in, a `ps1...` note out.
+Needs the same Sapling params (the tx carries a real output bundle).
+
+```java
+List<Utxo> utxos = blockbook.getUtxos(transparentAddress);
+
+TransparentTransactionResult result = ShieldingService.createTransaction(
+    mnemonic, utxos,
+    "ps124f3dxh...",   // shield destination (a D... address is rejected)
+    100_000_000L,      // amount in sats
+    chainTip,          // expiry context
+    params);
+
+String txhex = result.txhex();
+result.spent();        // UTXOs consumed — drop them from your UTXO set
+
+// Preview the exact fee the builder will charge for this amount (the kit's
+// own selection over JNI — throws the same "Insufficient public balance"
+// the build would), and solve send-max: the largest amount with
+// recipient + fee <= budget (== budget when it's fully consumable):
+long fee        = ShieldingService.selectionFee(utxos, 100_000_000L);
+long sendAmount = ShieldingService.resolveSubtractFeeAmount(utxos, totalBalanceSat);
+```
+
+Constraints inherited from the Rust kit's `create_shielding_transaction`:
+
+- every input is signed with the key at `m/44'/119'/0'/0/0`, so all UTXOs must
+  sit on the wallet's default transparent address — a UTXO tagged with another
+  `hdIndex` is rejected rather than signed invalidly (checked in the facade
+  and again natively, so the lower-level `ShieldKeys` path is covered too);
+- change comes back as a **transparent** output to that same address, not as a
+  shield note;
+- no memo (the kit hardcodes an empty memo on the shield output);
+- UTXO selection is largest-first, and the fee is charged for the shape
+  `(n transparent inputs, 0 transparent outputs, 0 sapling spends, 2 sapling
+  outputs)` — 2,176,000 sat for a single input. Selection and fee come from
+  the kit's `select_shielding_utxos` over JNI, never re-implemented in Java.
+
+The parsed Groth16 prover is cached natively per parameter-path pair, so only
+the first build in a process pays the ~50 MB read + SHA256 + parse.
+
 ---
 
 ## Architecture
@@ -238,6 +282,7 @@ jpivx/
     │                            CoinSelector (BnB + Knapsack), SpentOutpoint,
     │                            TransparentTransactionResult
     ├── shield/                  ShieldState, ShieldSyncService, ShieldSendService,
+    │                            ShieldingService (transparent→shield),
     │                            ShieldStreamParser, ShieldBlock, HandleBlocksResult,
     │                            SerializedNote, ShieldSelection, ShieldTxResult,
     │                            SaplingParams
@@ -270,9 +315,11 @@ The Java implementation is **byte-compatible** with the Rust `pivx-wallet-kit`:
 ## Limitations
 
 - **Full shield lifecycle works**: derive addresses → sync (scan, decrypt, witness)
-  → send (Groth16-proven spends to `ps1...` or `D...`). Remaining gaps: no
-  transparent→shield shielding builder, no reorg handling (same semantics as the
-  Rust kit), and proving params (~49 MB) must be downloadable at first use.
+  → send (Groth16-proven spends to `ps1...` or `D...`) → shield transparent coins
+  (`ShieldingService`, t→z). Remaining gaps: shielding spends only UTXOs on the
+  default address `m/44'/119'/0'/0/0` and returns change transparently (kit
+  behaviour), no reorg handling (same semantics as the Rust kit), and proving
+  params (~49 MB) must be downloadable at first use.
 - Native lib is per-platform: build on each target platform
   (`native/build-native.sh` detects `macos`/`linux`/`windows` × `aarch64`/`x86_64`).
 
