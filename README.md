@@ -218,6 +218,32 @@ long sendAmount = ShieldSendService.resolveSubtractFeeAmount(
     state.getUnspentNotes(), budgetSat, "ps124f3dxh...");
 ```
 
+### Unshield: Shield → Transparent (deshield)
+
+Same entry point — only the destination changes. A `D...` address turns the
+send into a deshield: the recipient gets a transparent output, while change
+(and the inputs) stay shielded. Groth16 params are still required because the
+tx spends shield notes.
+
+```java
+ShieldTxResult result = ShieldSendService.createTransaction(
+    mnemonic, birthdayHeight, state,
+    "DPo9TNvPwy2ZfmVM3CRCxbBvh6NojguWXJ",  // D... destination → deshield
+    5_000_000L,        // amount in sats
+    "",                // memo is ignored for transparent destinations
+    chainTip + 1,
+    params);
+
+blockbook.sendTransaction(result.txhex());
+state.removeSpentNotes(result.nullifiers());
+saveState(state);
+
+// Send-max works the same — the D... destination makes the solver charge
+// the deshield fee shape (one extra transparent output, +34,000 sat):
+long sendAmount = ShieldSendService.resolveSubtractFeeAmount(
+    state.getUnspentNotes(), state.getShieldBalance(), "DPo9TNv...");
+```
+
 Lower-level entry points remain available: `ShieldSendService.buildWalletJson(...)`
 produces the kit's `WalletData` JSON, and `ShieldKeys.createShieldTransaction(...)`
 takes it directly for full control over the JNI call.
