@@ -1,9 +1,8 @@
 package dev.jpivx.wallet.shield;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
+import com.grack.nanojson.JsonObject;
 
 import java.util.List;
-
 
 /**
  * Output of the JNI {@code handle_blocks} bridge — mirrors
@@ -15,7 +14,17 @@ import java.util.List;
  * @param nullifiers     nullifiers seen (potential spends of our notes)
  */
 public record HandleBlocksResult(
-        @JsonProperty("commitment_tree") String commitmentTree,
-        @JsonProperty("new_notes") List<SerializedNote> newNotes,
-        @JsonProperty("updated_notes") List<SerializedNote> updatedNotes,
-        @JsonProperty("nullifiers") List<String> nullifiers) {}
+        String commitmentTree,
+        List<SerializedNote> newNotes,
+        List<SerializedNote> updatedNotes,
+        List<String> nullifiers) {
+
+    /** Parse the bridge's JSON result; missing arrays read as empty. */
+    public static HandleBlocksResult fromJson(JsonObject o) {
+        return new HandleBlocksResult(
+                o.getString("commitment_tree", ""),
+                SerializedNote.fromJsonArray(o.getArray("new_notes")),
+                SerializedNote.fromJsonArray(o.getArray("updated_notes")),
+                ShieldJson.stringList(o.getArray("nullifiers")));
+    }
+}

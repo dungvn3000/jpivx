@@ -1,6 +1,6 @@
 package dev.jpivx.wallet.shield;
 
-import tools.jackson.databind.ObjectMapper;
+import com.grack.nanojson.JsonParser;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIf;
 
@@ -34,8 +34,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>Skipped when the native shield library is not loaded.
  */
 class ShieldKeysHandleBlocksTest {
-
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private static final String TEST_MNEMONIC =
             "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
@@ -74,7 +72,7 @@ class ShieldKeysHandleBlocksTest {
         String blocksJson = "[{\"height\":5000000,\"txs\":[\"" + txHex + "\"]}]";
         String resultJson = ShieldKeys.handleBlocks(treeHex, blocksJson, extfvk, "[]");
 
-        HandleBlocksResult result = MAPPER.readValue(resultJson, HandleBlocksResult.class);
+        HandleBlocksResult result = HandleBlocksResult.fromJson(JsonParser.object().from(resultJson));
 
         assertTrue(result.newNotes().isEmpty(), "unrelated key decrypts nothing");
         assertTrue(result.updatedNotes().isEmpty(), "no pre-existing notes to advance");

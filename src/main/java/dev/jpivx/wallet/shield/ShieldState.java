@@ -56,8 +56,8 @@ public final class ShieldState {
     public long getShieldBalance() {
         long sum = 0;
         for (SerializedNote n : unspentNotes) {
-            if (n.note() != null && n.note().has("value")) {
-                sum += n.note().get("value").asLong(0);
+            if (n.note() != null) {
+                sum += n.note().getLong("value", 0);
             }
         }
         return sum;

@@ -1,7 +1,9 @@
 package dev.jpivx.wallet.shield;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
+import com.grack.nanojson.JsonArray;
+import com.grack.nanojson.JsonObject;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -13,6 +15,19 @@ import java.util.List;
  * @param total   sum of selected note values (&ge; amount + fee)
  */
 public record ShieldSelection(
-        @JsonProperty("indexes") List<Long> indexes,
-        @JsonProperty("fee") long fee,
-        @JsonProperty("total") long total) {}
+        List<Long> indexes,
+        long fee,
+        long total) {
+
+    /** Parse the bridge's JSON result; a missing index array reads as empty. */
+    public static ShieldSelection fromJson(JsonObject o) {
+        List<Long> indexes = new ArrayList<>();
+        JsonArray arr = o.getArray("indexes");
+        if (arr != null) {
+            for (int i = 0; i < arr.size(); i++) {
+                indexes.add(arr.getLong(i, 0));
+            }
+        }
+        return new ShieldSelection(indexes, o.getLong("fee", 0), o.getLong("total", 0));
+    }
+}

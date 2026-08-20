@@ -1,8 +1,10 @@
 package dev.jpivx.wallet.network;
 
-import tools.jackson.core.JacksonException;
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
+import com.grack.nanojson.JsonArray;
+import com.grack.nanojson.JsonObject;
+import com.grack.nanojson.JsonParser;
+import com.grack.nanojson.JsonParserException;
+import com.grack.nanojson.JsonWriter;
 
 import java.io.IOException;
 import java.net.URI;
@@ -22,8 +24,6 @@ import dev.jpivx.wallet.core.Utxo;
  * {@link BlockbookParser}.
  */
 public final class BlockbookClient {
-
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final String baseUrl;
     private final HttpClient client;
@@ -69,12 +69,10 @@ public final class BlockbookClient {
             throw new IOException("Blockbook returned HTTP " + resp.statusCode()
                     + ": " + resp.body());
         }
-        // Jackson 3 reports parse failures as an unchecked JacksonException; keep
-        // surfacing them as IOException so callers only have to handle one type.
-        JsonNode raw;
+        JsonArray raw;
         try {
-            raw = MAPPER.readTree(resp.body());
-        } catch (JacksonException e) {
+            raw = JsonParser.array().from(resp.body());
+        } catch (JsonParserException e) {
             throw new IOException("Blockbook returned an unparseable body: " + resp.body(), e);
         }
         return BlockbookParser.parseBlockbookUtxos(raw, confirmedOnly, hdIndex);
@@ -102,21 +100,25 @@ public final class BlockbookClient {
         HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString());
         // Blockbook reports rejections as JSON {"error": ...} (often with a 4xx
         // status); non-JSON bodies (proxy errors, HTML) would otherwise blow up
-        // in readTree with a confusing parse error.
-        JsonNode body;
+        // in the parser with a confusing error.
+        JsonObject body;
         try {
-            body = MAPPER.readTree(resp.body());
-        } catch (Exception e) {
+            body = JsonParser.object().from(resp.body());
+        } catch (JsonParserException e) {
             throw new IOException("Broadcast failed: HTTP " + resp.statusCode()
                     + ", unparseable body: " + resp.body(), e);
         }
-        if (body.has("error") && !body.get("error").isNull()) {
-            throw new IOException("Broadcast error: " + body.get("error").asString());
+        if (body.has("error") && !body.isNull("error")) {
+            // The error is usually a string, but some deployments nest an
+            // object; render those as JSON rather than as a Java map dump.
+            Object err = body.get("error");
+            throw new IOException("Broadcast error: "
+                    + (err instanceof String s ? s : JsonWriter.string(err)));
         }
         if (resp.statusCode() != 200) {
             throw new IOException("Broadcast failed: HTTP " + resp.statusCode()
                     + ": " + resp.body());
         }
-        return body.path("result").asString();
+        return body.getString("result", "");
     }
 }

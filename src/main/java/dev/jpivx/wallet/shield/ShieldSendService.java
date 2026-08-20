@@ -1,8 +1,8 @@
 package dev.jpivx.wallet.shield;
 
-import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.node.ArrayNode;
-import tools.jackson.databind.node.ObjectNode;
+import com.grack.nanojson.JsonArray;
+import com.grack.nanojson.JsonObject;
+import com.grack.nanojson.JsonWriter;
 
 import java.io.IOException;
 import java.util.Arrays;
@@ -24,8 +24,6 @@ import dev.jpivx.wallet.crypto.ShieldKeys;
  * </pre>
  */
 public final class ShieldSendService {
-
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private ShieldSendService() {
         throw new AssertionError("no instances");
@@ -78,7 +76,7 @@ public final class ShieldSendService {
         String resultJson = ShieldKeys.createShieldTransaction(
                 walletJson, toAddress, amountSat, memo, blockHeight,
                 params.spendPath().toString(), params.outputPath().toString());
-        return MAPPER.readValue(resultJson, ShieldTxResult.class);
+        return ShieldTxResult.fromJson(ShieldJson.parseObject(resultJson));
     }
 
     /**
@@ -102,20 +100,21 @@ public final class ShieldSendService {
         // Kit's WalletData::seed is [u8; 32] — the first half of the BIP39 seed.
         byte[] seed32 = Arrays.copyOf(seed64, 32);
 
-        ObjectNode wallet = MAPPER.createObjectNode();
+        JsonObject wallet = new JsonObject();
         wallet.put("version", 1);
-        ArrayNode seedArr = wallet.putArray("seed");
+        JsonArray seedArr = new JsonArray();
         for (byte b : seed32) {
             seedArr.add(b & 0xff);
         }
+        wallet.put("seed", seedArr);
         wallet.put("extfvk", ShieldKeys.extfvk(seed64));
         wallet.put("birthday_height", birthdayHeight);
         wallet.put("last_block", state.getLastBlock());
         wallet.put("commitment_tree", state.getCommitmentTree());
-        wallet.set("unspent_notes", MAPPER.valueToTree(state.getUnspentNotes()));
+        wallet.put("unspent_notes", SerializedNote.toJsonArray(state.getUnspentNotes()));
         wallet.put("mnemonic", BIP39Service.normalize(mnemonic));
-        wallet.putArray("unspent_utxos");
-        return MAPPER.writeValueAsString(wallet);
+        wallet.put("unspent_utxos", new JsonArray());
+        return JsonWriter.string(wallet);
     }
 
     // ---------------------------------------------------------------------
@@ -134,7 +133,8 @@ public final class ShieldSendService {
     public static long resolveSubtractFeeAmount(List<SerializedNote> notes, long budgetSat,
                                                 String toAddress) throws IOException {
         return resolveSubtractFeeAmount(
-                MAPPER.writeValueAsString(notes), budgetSat, transparentOuts(toAddress));
+                JsonWriter.string(SerializedNote.toJsonArray(notes)), budgetSat,
+                transparentOuts(toAddress));
     }
 
     /**
@@ -179,6 +179,6 @@ public final class ShieldSendService {
     private static long selectShieldFee(String notesJson, long amountSat, long tOut)
             throws IOException {
         String json = ShieldKeys.selectShieldNotes(notesJson, amountSat, tOut, SAPLING_OUTS);
-        return MAPPER.readValue(json, ShieldSelection.class).fee();
+        return ShieldSelection.fromJson(ShieldJson.parseObject(json)).fee();
     }
 }

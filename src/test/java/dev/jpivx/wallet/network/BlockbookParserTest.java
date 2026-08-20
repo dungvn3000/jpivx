@@ -1,7 +1,7 @@
 package dev.jpivx.wallet.network;
 
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
+import com.grack.nanojson.JsonArray;
+import com.grack.nanojson.JsonParser;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -18,15 +18,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class BlockbookParserTest {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
-
     @Test
     void parseBlockbookUtxosHandlesStringAndNumberValues() throws Exception {
         String json = "["
                 + "{\"txid\":\"" + "a".repeat(64) + "\",\"vout\":0,\"value\":\"500000000\",\"height\":5000000},"
                 + "{\"txid\":\"" + "b".repeat(64) + "\",\"vout\":2,\"value\":100000000,\"height\":5100000}"
                 + "]";
-        JsonNode raw = MAPPER.readTree(json);
+        JsonArray raw = JsonParser.array().from(json);
         List<Utxo> utxos = BlockbookParser.parseBlockbookUtxos(raw);
         assertEquals(2, utxos.size());
         assertEquals(500_000_000L, utxos.get(0).amount());
@@ -42,7 +40,7 @@ class BlockbookParserTest {
                 + "{\"txid\":\"" + "c".repeat(64) + "\",\"vout\":0,\"value\":\"0\",\"height\":1000},"
                 + "{\"txid\":\"" + "d".repeat(64) + "\",\"vout\":1,\"value\":\"42\",\"height\":2000}"
                 + "]";
-        JsonNode raw = MAPPER.readTree(json);
+        JsonArray raw = JsonParser.array().from(json);
         List<Utxo> utxos = BlockbookParser.parseBlockbookUtxos(raw);
         assertEquals(1, utxos.size());
         assertEquals("d".repeat(64), utxos.get(0).txid());
@@ -53,7 +51,7 @@ class BlockbookParserTest {
     @Test
     void parseBlockbookUtxosScriptsAreEmpty() throws Exception {
         String json = "[{\"txid\":\"" + "e".repeat(64) + "\",\"vout\":0,\"value\":\"1000\",\"height\":1000}]";
-        JsonNode raw = MAPPER.readTree(json);
+        JsonArray raw = JsonParser.array().from(json);
         List<Utxo> utxos = BlockbookParser.parseBlockbookUtxos(raw);
         assertEquals(1, utxos.size());
         assertTrue(utxos.get(0).script().isEmpty());
@@ -66,7 +64,7 @@ class BlockbookParserTest {
                 + "{\"txid\":\"" + "a".repeat(64) + "\",\"vout\":0,\"value\":\"10000000\",\"height\":5000000,\"confirmations\":100},"
                 + "{\"txid\":\"" + "b".repeat(64) + "\",\"vout\":0,\"value\":\"10000000\",\"height\":0,\"confirmations\":0}"
                 + "]";
-        JsonNode raw = MAPPER.readTree(json);
+        JsonArray raw = JsonParser.array().from(json);
         List<Utxo> utxos = BlockbookParser.parseBlockbookUtxos(raw);
         assertEquals(1, utxos.size(), "unconfirmed UTXO (height=0) must be filtered out by default");
         assertEquals("a".repeat(64), utxos.get(0).txid());
@@ -79,7 +77,7 @@ class BlockbookParserTest {
                 + "{\"txid\":\"" + "a".repeat(64) + "\",\"vout\":0,\"value\":\"10000000\",\"height\":5000000},"
                 + "{\"txid\":\"" + "b".repeat(64) + "\",\"vout\":0,\"value\":\"10000000\",\"height\":0}"
                 + "]";
-        JsonNode raw = MAPPER.readTree(json);
+        JsonArray raw = JsonParser.array().from(json);
         List<Utxo> utxos = BlockbookParser.parseBlockbookUtxos(raw, false);
         assertEquals(2, utxos.size(), "confirmedOnly=false should include unconfirmed UTXOs");
     }
@@ -92,7 +90,7 @@ class BlockbookParserTest {
                 + "{\"txid\":\"" + "a".repeat(64) + "\",\"vout\":0,\"value\":\"10000000\",\"height\":5000000,\"confirmations\":100},"
                 + "{\"txid\":\"" + "a".repeat(64) + "\",\"vout\":0,\"value\":\"10000000\",\"height\":0,\"confirmations\":0}"
                 + "]";
-        JsonNode raw = MAPPER.readTree(json);
+        JsonArray raw = JsonParser.array().from(json);
         List<Utxo> utxos = BlockbookParser.parseBlockbookUtxos(raw, false);
         assertEquals(1, utxos.size(), "duplicate (txid, vout) must be deduplicated");
         assertEquals(5_000_000, utxos.get(0).height());
@@ -104,7 +102,7 @@ class BlockbookParserTest {
                 + "{\"txid\":\"" + "a".repeat(64) + "\",\"vout\":0,\"value\":\"10000000\",\"height\":5000000},"
                 + "{\"txid\":\"" + "a".repeat(64) + "\",\"vout\":0,\"value\":\"10000000\",\"height\":5000000}"
                 + "]";
-        JsonNode raw = MAPPER.readTree(json);
+        JsonArray raw = JsonParser.array().from(json);
         List<Utxo> utxos = BlockbookParser.parseBlockbookUtxos(raw);
         assertEquals(1, utxos.size(), "exact duplicates must be deduplicated");
     }

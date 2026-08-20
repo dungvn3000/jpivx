@@ -1,6 +1,6 @@
 package dev.jpivx.wallet.shield;
 
-import tools.jackson.databind.ObjectMapper;
+import com.grack.nanojson.JsonParser;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIf;
 
@@ -24,8 +24,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * ({@code ~/.pivx-wallet/params}) — on machines without them the suite skips.
  */
 class ShieldSendFullJniTest {
-
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private static final String TEST_MNEMONIC =
             "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
@@ -52,7 +50,7 @@ class ShieldSendFullJniTest {
      */
     private ShieldState stateWithNote(int birthdayHeight) throws Exception {
         SerializedNote note = new SerializedNote(
-                MAPPER.readTree(NOTE_JSON), WITNESS_HEX, EXPECTED_NULLIFIER, null, birthdayHeight);
+                JsonParser.object().from(NOTE_JSON), WITNESS_HEX, EXPECTED_NULLIFIER, null, birthdayHeight);
         return new ShieldState(birthdayHeight, "", List.of(note));
     }
 
@@ -104,7 +102,7 @@ class ShieldSendFullJniTest {
         String resultJson = ShieldKeys.createShieldTransaction(
                 walletJson, dest, 5_000_000L, "", 5_000_001L,
                 params.spendPath().toString(), params.outputPath().toString());
-        ShieldTxResult result = MAPPER.readValue(resultJson, ShieldTxResult.class);
+        ShieldTxResult result = ShieldTxResult.fromJson(JsonParser.object().from(resultJson));
 
         assertEquals(5_000_000L, result.amount());
         assertEquals(EXPECTED_FEE + 34_000L, result.fee(), "1 extra transparent output (34 bytes × 1000 sat)");

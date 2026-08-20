@@ -1,6 +1,6 @@
 package dev.jpivx.wallet.core;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
+import com.grack.nanojson.JsonObject;
 
 /**
  * A transparent unspent transaction output.
@@ -14,12 +14,12 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * to 0 (the standard receive address).
  */
 public record Utxo(
-        @JsonProperty("txid") String txid,
-        @JsonProperty("vout") int vout,
-        @JsonProperty("amount") long amount,
-        @JsonProperty("script") String script,
-        @JsonProperty("height") int height,
-        @JsonProperty("hd_index") int hdIndex
+        String txid,
+        int vout,
+        long amount,
+        String script,
+        int height,
+        int hdIndex
 ) {
     public Utxo {
         if (txid == null) txid = "";
@@ -29,5 +29,28 @@ public record Utxo(
     /** Convenience constructor for backward compat — defaults hdIndex to 0. */
     public Utxo(String txid, int vout, long amount, String script, int height) {
         this(txid, vout, amount, script, height, 0);
+    }
+
+    /** Read the kit's {@code SerializedUTXO} JSON shape (missing {@code hd_index} → 0). */
+    public static Utxo fromJson(JsonObject o) {
+        return new Utxo(
+                o.getString("txid", ""),
+                o.getInt("vout", 0),
+                o.getLong("amount", 0),
+                o.getString("script", ""),
+                o.getInt("height", 0),
+                o.getInt("hd_index", 0));
+    }
+
+    /** Write the kit's {@code SerializedUTXO} JSON shape (field order matches the Rust struct). */
+    public JsonObject toJson() {
+        JsonObject o = new JsonObject();
+        o.put("txid", txid);
+        o.put("vout", vout);
+        o.put("amount", amount);
+        o.put("script", script);
+        o.put("height", height);
+        o.put("hd_index", hdIndex);
+        return o;
     }
 }

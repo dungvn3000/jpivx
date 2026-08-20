@@ -1,6 +1,7 @@
 package dev.jpivx.wallet.network;
 
-import tools.jackson.databind.JsonNode;
+import com.grack.nanojson.JsonArray;
+import com.grack.nanojson.JsonObject;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -35,11 +36,11 @@ public final class BlockbookParser {
         throw new AssertionError("no instances");
     }
 
-    public static List<Utxo> parseBlockbookUtxos(JsonNode raw) {
+    public static List<Utxo> parseBlockbookUtxos(JsonArray raw) {
         return parseBlockbookUtxos(raw, true, 0);
     }
 
-    public static List<Utxo> parseBlockbookUtxos(JsonNode raw, boolean confirmedOnly) {
+    public static List<Utxo> parseBlockbookUtxos(JsonArray raw, boolean confirmedOnly) {
         return parseBlockbookUtxos(raw, confirmedOnly, 0);
     }
 
@@ -47,29 +48,32 @@ public final class BlockbookParser {
      * Parse a Blockbook UTXO JSON array, tagging each UTXO with the given
      * {@code hdIndex}.
      *
-     * @param raw          the JSON array node from Blockbook
+     * @param raw          the JSON array from Blockbook
      * @param confirmedOnly if {@code true}, skip UTXOs with {@code height <= 0}
      * @param hdIndex      the HD derivation index to tag each UTXO with
      * @return parsed UTXOs (duplicates by {@code (txid, vout)} removed)
      */
-    public static List<Utxo> parseBlockbookUtxos(JsonNode raw, boolean confirmedOnly, int hdIndex) {
+    public static List<Utxo> parseBlockbookUtxos(JsonArray raw, boolean confirmedOnly, int hdIndex) {
         List<Utxo> utxos = new ArrayList<>();
         Set<String> seen = new HashSet<>();
-        for (JsonNode u : raw) {
-            String txid = u.path("txid").asString("");
-            int vout = u.path("vout").asInt(0);
+        for (int i = 0; i < raw.size(); i++) {
+            JsonObject u = raw.getObject(i);
+            if (u == null) {
+                continue;
+            }
+            String txid = u.getString("txid", "");
+            int vout = u.getInt("vout", 0);
             long amount = 0;
-            JsonNode valueNode = u.path("value");
-            if (valueNode.isString()) {
+            if (u.isString("value")) {
                 try {
-                    amount = Long.parseUnsignedLong(valueNode.asString());
+                    amount = Long.parseUnsignedLong(u.getString("value"));
                 } catch (NumberFormatException ignored) {
                     amount = 0;
                 }
-            } else if (valueNode.isNumber()) {
-                amount = valueNode.asLong(0);
+            } else if (u.isNumber("value")) {
+                amount = u.getLong("value", 0);
             }
-            int height = u.path("height").asInt(0);
+            int height = u.getInt("height", 0);
 
             if (txid.isEmpty() || amount == 0) {
                 continue;

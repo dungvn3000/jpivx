@@ -1,8 +1,8 @@
 package dev.jpivx.wallet.shield;
 
-import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.node.ArrayNode;
-import tools.jackson.databind.node.ObjectNode;
+import com.grack.nanojson.JsonArray;
+import com.grack.nanojson.JsonObject;
+import com.grack.nanojson.JsonWriter;
 
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -37,9 +37,6 @@ public final class ShieldSyncService {
 
     /** Default blocks per JNI batch (matches MyPIVXWallet's 200). */
     public static final int DEFAULT_BATCH_BLOCKS = 200;
-
-    /** Shared ObjectMapper for JNI JSON wire format. */
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private ShieldSyncService() {
         throw new AssertionError("no instances");
@@ -108,12 +105,12 @@ public final class ShieldSyncService {
     /** Run one batch through JNI and merge the result back into the state. */
     static void applyBatch(ShieldState state, String extfvk, List<ShieldBlock> batch)
             throws Exception {
-        String notesJson = MAPPER.writeValueAsString(state.getUnspentNotes());
+        String notesJson = JsonWriter.string(SerializedNote.toJsonArray(state.getUnspentNotes()));
         String blocksJson = toBlocksJson(batch);
 
         String resultJson = ShieldKeys.handleBlocks(
                 state.getCommitmentTree(), blocksJson, extfvk, notesJson);
-        HandleBlocksResult result = MAPPER.readValue(resultJson, HandleBlocksResult.class);
+        HandleBlocksResult result = HandleBlocksResult.fromJson(ShieldJson.parseObject(resultJson));
 
         state.setCommitmentTree(result.commitmentTree());
 
@@ -132,16 +129,18 @@ public final class ShieldSyncService {
     /** Serialize blocks into the JNI wire shape: hex txs per the bridge's contract. */
     static String toBlocksJson(List<ShieldBlock> blocks) {
         HexFormat hex = HexFormat.of();
-        ArrayNode out = MAPPER.createArrayNode();
+        JsonArray out = new JsonArray();
         for (ShieldBlock b : blocks) {
-            ObjectNode o = out.addObject();
+            JsonObject o = new JsonObject();
             o.put("height", b.height());
-            ArrayNode txs = o.putArray("txs");
+            JsonArray txs = new JsonArray();
             for (byte[] tx : b.txs()) {
                 txs.add(hex.formatHex(tx));
             }
+            o.put("txs", txs);
+            out.add(o);
         }
-        return out.toString();
+        return JsonWriter.string(out);
     }
 
     /** Progress callback: last synced height + chain tip. */
