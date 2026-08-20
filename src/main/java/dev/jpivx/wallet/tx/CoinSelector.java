@@ -1,5 +1,6 @@
 package dev.jpivx.wallet.tx;
 
+import dev.jpivx.wallet.core.FeeEstimator;
 import dev.jpivx.wallet.core.Utxo;
 
 import java.util.*;
@@ -74,11 +75,8 @@ public final class CoinSelector {
     public static List<Utxo> select(List<Utxo> candidates, long amount, int nOutputs) {
         // Try BnB for a changeless solution (nOutputs = 1)
         Optional<List<Utxo>> bnbResult = selectBnB(candidates, amount, 1);
-        if (bnbResult.isPresent()) {
-            return bnbResult.get();
-        }
         // Fall back to Knapsack which may produce change
-        return selectKnapsack(candidates, amount, nOutputs);
+        return bnbResult.orElseGet(() -> selectKnapsack(candidates, amount, nOutputs));
     }
 
     /**
@@ -307,6 +305,7 @@ public final class CoinSelector {
      * @return fee in satoshis
      */
     public static long estimateFee(int nInputs, int nOutputs) {
-        return dev.jpivx.wallet.core.FeeEstimator.estimateRawTransparentFee(nInputs, nOutputs);
+        return FeeEstimator.estimateRawTransparentFee(nInputs, nOutputs);
     }
+
 }
