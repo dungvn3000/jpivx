@@ -1,6 +1,6 @@
 package dev.jpivx.wallet.network;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -56,13 +56,13 @@ public final class BlockbookParser {
         List<Utxo> utxos = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         for (JsonNode u : raw) {
-            String txid = u.path("txid").asText("");
+            String txid = u.path("txid").asString("");
             int vout = u.path("vout").asInt(0);
             long amount = 0;
             JsonNode valueNode = u.path("value");
-            if (valueNode.isTextual()) {
+            if (valueNode.isString()) {
                 try {
-                    amount = Long.parseUnsignedLong(valueNode.asText());
+                    amount = Long.parseUnsignedLong(valueNode.asString());
                 } catch (NumberFormatException ignored) {
                     amount = 0;
                 }

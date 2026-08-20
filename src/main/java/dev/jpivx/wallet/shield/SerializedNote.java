@@ -1,7 +1,7 @@
 package dev.jpivx.wallet.shield;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 
 /**
  * A serializable spendable Sapling note (mirrors {@code wallet::SerializedNote}).

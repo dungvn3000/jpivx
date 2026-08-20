@@ -1,7 +1,8 @@
 package dev.jpivx.wallet.network;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.net.URI;
@@ -68,7 +69,14 @@ public final class BlockbookClient {
             throw new IOException("Blockbook returned HTTP " + resp.statusCode()
                     + ": " + resp.body());
         }
-        JsonNode raw = MAPPER.readTree(resp.body());
+        // Jackson 3 reports parse failures as an unchecked JacksonException; keep
+        // surfacing them as IOException so callers only have to handle one type.
+        JsonNode raw;
+        try {
+            raw = MAPPER.readTree(resp.body());
+        } catch (JacksonException e) {
+            throw new IOException("Blockbook returned an unparseable body: " + resp.body(), e);
+        }
         return BlockbookParser.parseBlockbookUtxos(raw, confirmedOnly, hdIndex);
     }
 
@@ -103,12 +111,12 @@ public final class BlockbookClient {
                     + ", unparseable body: " + resp.body(), e);
         }
         if (body.has("error") && !body.get("error").isNull()) {
-            throw new IOException("Broadcast error: " + body.get("error").asText());
+            throw new IOException("Broadcast error: " + body.get("error").asString());
         }
         if (resp.statusCode() != 200) {
             throw new IOException("Broadcast failed: HTTP " + resp.statusCode()
                     + ": " + resp.body());
         }
-        return body.path("result").asText();
+        return body.path("result").asString();
     }
 }

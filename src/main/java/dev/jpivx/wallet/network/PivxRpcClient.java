@@ -1,8 +1,9 @@
 package dev.jpivx.wallet.network;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.io.IOException;
 import java.net.URI;
@@ -45,7 +46,7 @@ public final class PivxRpcClient {
      */
     public String sendRawTransaction(String txhex) throws IOException, InterruptedException {
         JsonNode result = call("sendrawtransaction", txhex);
-        return result.asText();
+        return result.asString();
     }
 
     /**
@@ -75,12 +76,20 @@ public final class PivxRpcClient {
                 .build();
 
         HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString());
-        JsonNode body = MAPPER.readTree(resp.body());
+        // Jackson 3 reports parse failures as an unchecked JacksonException; keep
+        // surfacing them as IOException so callers only have to handle one type.
+        JsonNode body;
+        try {
+            body = MAPPER.readTree(resp.body());
+        } catch (JacksonException e) {
+            throw new IOException("RPC returned an unparseable body (HTTP "
+                    + resp.statusCode() + "): " + resp.body(), e);
+        }
 
         if (body.has("error") && !body.get("error").isNull()) {
             JsonNode err = body.get("error");
             throw new IOException("RPC error " + err.path("code").asInt()
-                    + ": " + err.path("message").asText());
+                    + ": " + err.path("message").asString());
         }
         return body.get("result");
     }
