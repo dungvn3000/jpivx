@@ -551,7 +551,7 @@ mod tests {
     /// Real mainnet fixture from `pivx-wallet-kit/tests/fixtures/`
     /// (`69dc1691...`, pure shield: 1 spend + 2 outputs).
     const TX_SHIELD_HEX: &str =
-        include_str!("../../../../../pivx-wallet-kit/tests/fixtures/tx_shield.hex");
+        include_str!("../../../../pivx-wallet-kit/tests/fixtures/tx_shield.hex");
 
     fn test_extfvk() -> String {
         let mnemonic = bip39::Mnemonic::parse_normalized(TEST_MNEMONIC).unwrap();
