@@ -119,6 +119,17 @@ long feeSat  = result.fee();
 TransparentTransactionResult result2 = RawTransparentBuilder.createRawTransparentTransactionFromUtxos(
     seed, 0 /* change */, 3 /* hdIndex */, utxos, "DRecipientAddress...", 100_000_000L);
 
+// Several recipients in one transaction — a batch payment, or splitting a
+// UTXO into spendable pieces without chaining one tx (and one fee, and one
+// confirmation wait) per piece. Change returns to the first input's address.
+TransparentTransactionResult batch = RawTransparentBuilder.createRawTransparentTransaction(
+        utxos, seed, List.of(new Recipient("DAlice...", 100_000_000L),
+                             new Recipient("DBob...",   250_000_000L)));
+
+// split() lays out N equal pieces (the last absorbs the rounding remainder)
+TransparentTransactionResult chunks = RawTransparentBuilder.createRawTransparentTransaction(
+        utxos, seed, RawTransparentBuilder.split(ownAddress, 400_000_000L, 4));
+
 // Multi-index: each UTXO signed with its own HD key (utxo.hdIndex());
 // defaults to the external branch (change=0). Pass the branch explicitly
 // to spend internal-branch coins (all UTXOs must be on that one branch):
@@ -326,7 +337,8 @@ jpivx/
     │                            incl. the embedded commitment-tree checkpoints)
     ├── internal/                Base58, ECKey, HDKeyDerivation, DeterministicKey,
     │                            ChildNumber, MnemonicCode, Sha256Hash, ByteUtil
-    ├── tx/                      RawTransparentBuilder (v1 P2PKH, SIGHASH_ALL),
+    ├── tx/                      RawTransparentBuilder (v1 P2PKH, SIGHASH_ALL,
+    │                            single- and multi-recipient), Recipient,
     │                            CoinSelector (BnB + Knapsack), SpentOutpoint,
     │                            TransparentTransactionResult
     ├── shield/                  ShieldState, ShieldSyncService, ShieldSendService,
@@ -345,7 +357,10 @@ jpivx/
 The Java implementation is **byte-compatible** with the Rust `pivx-wallet-kit`:
 - Same BIP39 seed → same transparent address (`DPo9TNvPwy2ZfmVM3CRCxbBvh6NojguWXJ`)
 - Same mnemonic + message → same base64 signature (RFC6979 deterministic nonce)
-- Same UTXO set + key → same txhex (verified via golden vectors captured from Rust)
+- Same UTXO set + key → same txhex (verified via golden vectors captured from Rust).
+  The multi-recipient entry point is Java-only — the kit has no counterpart — and
+  is pinned to the verified path by asserting that a one-recipient call produces
+  byte-identical hex to `createRawTransparentTransactionMultiIndex`
 - Same mnemonic → same shield extfvk (`pxviews1...`) and default shield address
   (`ps124f3dxh...` for the shared BIP39 test vector) — golden values asserted in
   `ShieldKeysTest`, produced by the kit itself over JNI
