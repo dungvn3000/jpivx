@@ -415,11 +415,12 @@ pub extern "system" fn Java_dev_jpivx_wallet_crypto_ShieldKeys_nativeCreateShiel
         reject_foreign_hd_utxos(&wallet_json)?;
         let mut wallet: WalletData = serde_json::from_str(&wallet_json)?;
 
-        // Fast-fail before the expensive parameter load: with no UTXOs
-        // there is nothing to spend. Mirrors the builder's own message.
-        if wallet.unspent_utxos.is_empty() {
-            return Err("No transparent UTXOs available".into());
-        }
+        // Fast-fail before deriving the seed and the expensive (first-use)
+        // parameter load: run the builder's own selection now. Same code
+        // path, same errors ("No transparent UTXOs available" /
+        // "Insufficient public balance ..."), and it also covers direct
+        // callers that skip the Java facade's pre-checks.
+        select_shielding_utxos(&wallet.unspent_utxos, amount_sat as u64)?;
 
         // Full 64-byte BIP39 seed for transparent BIP32 derivation, from the
         // wallet's own mnemonic (Zeroizing; wiped on drop).

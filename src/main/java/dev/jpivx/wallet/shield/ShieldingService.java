@@ -88,9 +88,9 @@ public final class ShieldingService {
             throw new IllegalArgumentException("amount must be positive: " + amountSat);
         }
         requireSpendableUtxos(utxos);
-        // The kit's own selection — throws "Insufficient public balance"
-        // BEFORE the expensive (~50 MB, first use) parameter load.
-        quoteFee(utxosJson(utxos), amountSat);
+        // No pre-quote here: the native side runs the kit's selection before
+        // the expensive (~50 MB, first use) parameter load and throws the
+        // same "Insufficient public balance" the build would.
 
         String walletJson = ShieldSendService.buildWalletJson(
                 mnemonic, 0, new ShieldState(0, "", List.of()), utxos);

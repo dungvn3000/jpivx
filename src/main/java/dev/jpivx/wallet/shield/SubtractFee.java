@@ -62,10 +62,9 @@ final class SubtractFee {
         // Propagates real quote errors (malformed notes/UTXOs, balance below
         // the minimal one-input fee) instead of masking them as "infeasible".
         long minFee = quote.fee(0);
-        long hi = budgetSat - minFee; // fee(a) >= minFee, so a + fee(a) <= budget bounds a here
-        if (hi <= 0) {
-            throw tooSmall(budgetSat, minFee, feeLabel);
-        }
+        // fee(a) >= minFee, so a + fee(a) <= budget bounds a here. When
+        // hi <= 0 the loop never runs and the post-loop throw fires.
+        long hi = budgetSat - minFee;
 
         long lo = 1;
         long best = -1;
