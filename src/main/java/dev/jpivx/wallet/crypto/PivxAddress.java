@@ -27,6 +27,64 @@ public final class PivxAddress {
         throw new AssertionError("no instances");
     }
 
+    /** Outcome of {@link #validate(String)}: what kind of address this is. */
+    public enum AddressType {
+        /** Valid transparent address (base58check; pubkey-hash or script-hash prefix). */
+        TRANSPARENT,
+        /** Valid shield address ({@code ps1...}, full bech32 + jubjub point check). */
+        SHIELD,
+        /** Not a valid PIVX mainnet address of either kind. */
+        INVALID
+    }
+
+    /**
+     * Fully validate a PIVX address of either kind, through the Rust kit's
+     * {@code keys::decode_generic_address} — the same decode every transaction
+     * builder performs, so a {@code TRANSPARENT}/{@code SHIELD} verdict here
+     * means the builders will accept it. Shield addresses get the complete
+     * check a pure-Java validator cannot do (bech32 checksum, HRP, payload
+     * length, jubjub point decompression).
+     *
+     * <p>Note the kit counts both the pubkey-hash ({@code D...}) and
+     * script-hash transparent prefixes as {@code TRANSPARENT}; jpivx's own
+     * transaction builders pay P2PKH only —
+     * {@link #isValidTransparent(String)} is the pure-Java check for exactly
+     * the addresses {@link #addressToP2pkhScript(String)} accepts, and needs
+     * no native library.
+     *
+     * @param address the address to validate (null/blank is {@code INVALID})
+     * @return the address kind, or {@link AddressType#INVALID}
+     * @throws IllegalStateException if the native shield library is unavailable
+     */
+    public static AddressType validate(String address) {
+        if (address == null || address.isBlank()) {
+            return AddressType.INVALID;
+        }
+        return switch (ShieldKeys.validateAddress(address)) {
+            case "shield" -> AddressType.SHIELD;
+            case "transparent" -> AddressType.TRANSPARENT;
+            default -> AddressType.INVALID;
+        };
+    }
+
+    /**
+     * True when {@code address} is a valid PIVX mainnet P2PKH transparent
+     * address ({@code D...}) — base58check checksum, length, and version byte.
+     * Pure Java: works without the native shield library, and matches exactly
+     * what {@link #addressToP2pkhScript(String)} accepts.
+     */
+    public static boolean isValidTransparent(String address) {
+        if (address == null || address.isBlank()) {
+            return false;
+        }
+        try {
+            addressToHash160(address);
+            return true;
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
+
     /**
      * Convert a compressed (or uncompressed) public key to a PIVX transparent
      * address ({@code D...}).

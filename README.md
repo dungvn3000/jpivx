@@ -86,6 +86,13 @@ byte[] script  = PivxAddress.addressToP2pkhScript("DPo9TNv...");
 byte[] hash160 = PivxAddress.addressToHash160("DPo9TNv...");
 String address = PivxAddress.hash160ToAddress(hash160);
 
+// Validate any address before building (e.g. as the user types):
+PivxAddress.AddressType kind = PivxAddress.validate(addr); // TRANSPARENT | SHIELD | INVALID
+// Full check via the kit over JNI — shield addresses get bech32 checksum +
+// jubjub point decompression, exactly the decode the tx builders perform.
+// Pure-Java fallback (no native lib) for P2PKH transparent addresses only:
+boolean ok = PivxAddress.isValidTransparent(addr);
+
 // Shield address (requires JNI library)
 boolean available = ShieldKeys.isAvailable();
 ShieldKeys.Checkpoint cp = ShieldKeys.checkpoint(birthdayHeight); // sync starting point

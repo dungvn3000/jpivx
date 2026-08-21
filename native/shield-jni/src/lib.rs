@@ -322,6 +322,38 @@ pub extern "system" fn Java_dev_jpivx_wallet_crypto_ShieldKeys_nativeHandleBlock
     .unwrap_or(std::ptr::null_mut())
 }
 
+/// Fully validate a PIVX address through the kit's
+/// `keys::decode_generic_address` — the same decode every transaction
+/// builder performs, so "valid here" means "buildable there".
+///
+/// Shield (`ps1...`) addresses get the complete check: bech32 checksum, HRP,
+/// payload length, and the jubjub point decompression a pure-Java validator
+/// cannot do. Transparent addresses get base58check + version byte (both the
+/// pubkey-hash and script-hash prefixes count, matching the kit).
+///
+/// Returns `"shield"`, `"transparent"`, or `"invalid"` — a malformed address
+/// is a return value, not an exception, so UI-side validation is cheap.
+///
+/// Java signature: `static native String nativeValidateAddress(String address)`
+#[no_mangle]
+pub extern "system" fn Java_dev_jpivx_wallet_crypto_ShieldKeys_nativeValidateAddress(
+    mut env: JNIEnv,
+    _class: JClass,
+    address: JString,
+) -> jstring {
+    guard(&mut env, |env| {
+        let address: String = env.get_string(&address)?.into();
+        let kind = match keys::decode_generic_address(&address) {
+            Ok(keys::GenericAddress::Shield(_)) => "shield",
+            Ok(keys::GenericAddress::Transparent(_)) => "transparent",
+            Err(_) => "invalid",
+        };
+        let jstr = env.new_string(kind)?;
+        Ok(jstr.into_raw())
+    })
+    .unwrap_or(std::ptr::null_mut())
+}
+
 /// Build and sign a shield transaction spending the wallet's notes.
 ///
 /// Inputs:

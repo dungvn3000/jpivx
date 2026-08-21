@@ -123,6 +123,26 @@ public final class ShieldKeys {
     }
 
     /**
+     * Fully validate a PIVX address through the kit's
+     * {@code keys::decode_generic_address} — the same decode the transaction
+     * builders perform, so "valid here" means "buildable there". Shield
+     * addresses get the complete check (bech32 checksum, HRP, payload length,
+     * jubjub point decompression); transparent addresses get base58check +
+     * version byte.
+     *
+     * <p>Prefer {@link PivxAddress#validate(String)}, which wraps this in a
+     * typed enum.
+     *
+     * @param address the address to validate
+     * @return {@code "shield"}, {@code "transparent"}, or {@code "invalid"}
+     * @throws IllegalStateException if the native shield library is unavailable
+     */
+    public static String validateAddress(String address) {
+        requireAvailable();
+        return nativeValidateAddress(address);
+    }
+
+    /**
      * The kit's embedded mainnet checkpoint at or before {@code blockHeight} —
      * the commitment tree a wallet must start syncing from.
      *
@@ -309,6 +329,8 @@ public final class ShieldKeys {
     private static native String[] nativeShieldAddressAt(String extfvk, long startIndex);
 
     private static native String[] nativeGetCheckpoint(int blockHeight);
+
+    private static native String nativeValidateAddress(String address);
 
     private static native String nativeHandleBlocks(String treeHex, String blocksJson,
                                                     String extfvk, String notesJson);

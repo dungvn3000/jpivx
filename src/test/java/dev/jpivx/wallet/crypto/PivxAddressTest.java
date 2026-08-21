@@ -4,7 +4,9 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Port of {@code decode_transparent_address_roundtrips_to_script} from
@@ -79,5 +81,26 @@ class PivxAddressTest {
         // decodes to 2 bytes, which is != 21.
         assertThrows(IllegalArgumentException.class,
                 () -> PivxAddress.addressToP2pkhScript("abc"));
+    }
+
+    @Test
+    void isValidTransparentIsAPureBooleanMirrorOfTheDecode() {
+        assertTrue(PivxAddress.isValidTransparent(TransparentKeysTest.EXPECTED_ADDRESS));
+
+        assertFalse(PivxAddress.isValidTransparent(null));
+        assertFalse(PivxAddress.isValidTransparent(""));
+        assertFalse(PivxAddress.isValidTransparent("abc"));
+        // Valid base58check but a foreign (Bitcoin) version byte.
+        byte[] hash160 = PivxAddress.addressToHash160(TransparentKeysTest.EXPECTED_ADDRESS);
+        assertFalse(PivxAddress.isValidTransparent(
+                dev.jpivx.wallet.internal.Base58.encodeChecked(0, hash160)));
+        // Checksum broken by flipping the last character.
+        String valid = TransparentKeysTest.EXPECTED_ADDRESS;
+        char last = valid.charAt(valid.length() - 1);
+        String corrupted = valid.substring(0, valid.length() - 1) + (last == '1' ? '2' : '1');
+        assertFalse(PivxAddress.isValidTransparent(corrupted));
+        // A shield address is not a transparent address.
+        assertFalse(PivxAddress.isValidTransparent(
+                "ps124f3dxhmtygh72cu8f05t94yey59at3armnk44uctjwdqf9uk2grnth3h5uszmqzzeev7kcr7rn"));
     }
 }
