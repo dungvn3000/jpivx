@@ -1,5 +1,6 @@
 package dev.jpivx.wallet.crypto;
 
+import dev.jpivx.wallet.internal.Base58;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -67,7 +68,7 @@ class PivxAddressTest {
         // rejected: a Bitcoin ('1...', version 0) address is otherwise a valid
         // Base58Check string and would become an irreversible wrong-chain send.
         byte[] hash160 = PivxAddress.addressToHash160(TransparentKeysTest.EXPECTED_ADDRESS);
-        String bitcoinStyle = dev.jpivx.wallet.internal.Base58.encodeChecked(0, hash160);
+        String bitcoinStyle = Base58.encodeChecked(0, hash160);
         assertThrows(IllegalArgumentException.class,
                 () -> PivxAddress.addressToP2pkhScript(bitcoinStyle));
         assertThrows(IllegalArgumentException.class,
