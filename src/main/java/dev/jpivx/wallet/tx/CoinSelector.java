@@ -46,10 +46,19 @@ public final class CoinSelector {
     public static final long OVERHEAD_VBYTES = 10L;
 
     /**
-     * Minimum change output value to bother creating one (in satoshis).
-     * Below this threshold it is cheaper to donate to miners.
+     * Network dust threshold (satoshis): nodes reject a transaction carrying
+     * any output below this value as nonstandard. A standardness rule of the
+     * network, not a wallet policy knob.
      */
-    public static final long MIN_CHANGE = 546L; // dust threshold
+    public static final long DUST_THRESHOLD = 546L;
+
+    /**
+     * Minimum change output value to bother creating one (in satoshis).
+     * Below this threshold it is cheaper to donate to miners. Wallet change
+     * policy — tunable independently of {@link #DUST_THRESHOLD}, but never
+     * below it (a sub-dust change output could not be relayed anyway).
+     */
+    public static final long MIN_CHANGE = DUST_THRESHOLD;
 
     /** Maximum BnB iterations before giving up. */
     private static final int BNB_TOTAL_TRIES = 100_000;

@@ -37,6 +37,13 @@ public final class RawTransparentBuilder {
         throw new AssertionError("no instances");
     }
 
+    /**
+     * Maximum serialized transaction size a default-policy PIVX node will relay
+     * (bytes). A signed transaction over this limit is consensus-valid but
+     * unrelayable, so the builder rejects it instead of returning it.
+     */
+    public static final int MAX_STANDARD_TX_SIZE = 100_000;
+
     /** Error thrown when a shield destination is requested (this builder has no prover). */
     public static final String SHIELD_DEST_ERROR =
             "Shield destination requires a Sapling prover — use ShieldingService.createTransaction "
@@ -58,7 +65,8 @@ public final class RawTransparentBuilder {
      * @param amount      the value to send, in satoshis
      * @return the signed transaction result
      * @throws IllegalArgumentException if {@code toAddress} is a shield address,
-     *         {@code utxos} is empty, or the UTXOs are insufficient
+     *         {@code amount} is below the dust threshold, {@code utxos} is
+     *         empty, or the UTXOs are insufficient
      * @throws ArithmeticException if the UTXO total overflows
      */
     public static TransparentTransactionResult createRawTransparentTransactionFromUtxos(
@@ -107,7 +115,8 @@ public final class RawTransparentBuilder {
      * @param amount     the value to send, in satoshis
      * @return the signed transaction result
      * @throws IllegalArgumentException if {@code toAddress} is a shield address,
-     *         no UTXOs are available, or the balance is insufficient
+     *         {@code amount} is below the dust threshold, no UTXOs are
+     *         available, or the balance is insufficient
      */
     public static TransparentTransactionResult createRawTransparentTransaction(
             List<Utxo> utxos, byte[] bip39Seed, String toAddress, long amount) {
@@ -208,7 +217,9 @@ public final class RawTransparentBuilder {
      * @return the signed transaction result; {@code amount()} is the total paid
      *         out to recipients, excluding change
      * @throws IllegalArgumentException if {@code recipients} is empty, holds a
-     *         shield destination, or the balance cannot cover amount + fee
+     *         shield destination, the balance cannot cover amount + fee, or the
+     *         signed transaction exceeds {@link #MAX_STANDARD_TX_SIZE}
+     * @throws ArithmeticException if the recipient total overflows
      */
     public static TransparentTransactionResult createRawTransparentTransaction(
             List<Utxo> utxos, byte[] bip39Seed, List<Recipient> recipients, int fromChange) {
@@ -227,7 +238,8 @@ public final class RawTransparentBuilder {
             outputs.add(new TxOutput(recipient.amount(),
                     PivxAddress.addressToP2pkhScript(recipient.address())));
         }
-        requireValidAmount(amount);
+        // No further amount check: each Recipient enforces the dust threshold on
+        // construction and Math.addExact keeps the sum from overflowing.
 
         // Selection budgets for the recipient outputs plus one change output; a
         // changeless match is still preferred when the inputs happen to fit.
@@ -273,10 +285,10 @@ public final class RawTransparentBuilder {
             throw new IllegalArgumentException("pieces must be at least 1: " + pieces);
         }
         long each = totalAmount / pieces;
-        if (each < CoinSelector.MIN_CHANGE) {
+        if (each < CoinSelector.DUST_THRESHOLD) {
             throw new IllegalArgumentException("splitting " + totalAmount + " sat into "
                     + pieces + " pieces gives " + each + " sat each, below the dust threshold ("
-                    + CoinSelector.MIN_CHANGE + " sat)");
+                    + CoinSelector.DUST_THRESHOLD + " sat)");
         }
         List<Recipient> recipients = new ArrayList<>(pieces);
         for (int i = 0; i < pieces - 1; i++) {
@@ -295,9 +307,19 @@ public final class RawTransparentBuilder {
         }
     }
 
+    /**
+     * The recipient amount must be positive <em>and</em> clear the dust
+     * threshold — one sub-dust output makes the whole transaction nonstandard,
+     * exactly the invariant {@link Recipient} enforces on the batch path.
+     */
     private static void requireValidAmount(long amount) {
         if (amount <= 0) {
             throw new IllegalArgumentException("amount must be positive: " + amount);
+        }
+        if (amount < CoinSelector.DUST_THRESHOLD) {
+            throw new IllegalArgumentException("amount " + amount
+                    + " sat is below the dust threshold (" + CoinSelector.DUST_THRESHOLD
+                    + " sat) — nodes reject sub-dust outputs as nonstandard");
         }
     }
 
@@ -306,7 +328,7 @@ public final class RawTransparentBuilder {
      * sub-dust outputs as nonstandard, and reference wallets donate it to miners.
      */
     private static Selection foldDustChange(List<Utxo> selected, long fee, long change) {
-        if (change > 0 && change < CoinSelector.MIN_CHANGE) {
+        if (change > 0 && change < CoinSelector.DUST_THRESHOLD) {
             fee += change;
             change = 0;
         }
@@ -416,7 +438,15 @@ public final class RawTransparentBuilder {
 
         writeOutputs(tx, outputs);
         ByteUtil.writeLeU32(tx, 0); // locktime
-        return tx.toByteArray();
+
+        byte[] txBytes = tx.toByteArray();
+        if (txBytes.length > MAX_STANDARD_TX_SIZE) {
+            throw new IllegalArgumentException("transaction is " + txBytes.length
+                    + " bytes (" + selected.size() + " inputs, " + outputs.size()
+                    + " outputs), over the " + MAX_STANDARD_TX_SIZE
+                    + "-byte standardness limit — no default-policy node would relay it");
+        }
+        return txBytes;
     }
 
     /**
@@ -426,16 +456,9 @@ public final class RawTransparentBuilder {
      * (signing_script at signing_index | 0x00 elsewhere) + sequence]* + outputs +
      * locktime + SIGHASH_ALL}, then double-SHA256. The outputs section must be
      * byte-identical to the final tx (SIGHASH_ALL commits to all outputs), so
-     * the change output always carries {@code changeScript} — not the signing
+     * a change output always carries the change script — not the signing
      * input's script.
      */
-    static byte[] computeSighash(List<Utxo> inputs, byte[] signingScript, int signingIndex,
-                                 long amount, long change, byte[] toScript, byte[] changeScript) {
-        return computeSighash(inputs, signingScript, signingIndex,
-                outputs(amount, toScript, change, changeScript));
-    }
-
-    /** SIGHASH_ALL over an arbitrary output list; see the single-recipient overload. */
     static byte[] computeSighash(List<Utxo> inputs, byte[] signingScript, int signingIndex,
                                  List<TxOutput> outputs) {
         ByteArrayOutputStream preimage = new ByteArrayOutputStream();
@@ -464,13 +487,7 @@ public final class RawTransparentBuilder {
         return PivxAddress.doubleSha256(preimage.toByteArray());
     }
 
-    /** Write the output section (payment + optional change), shared by tx body and sighash preimage. */
-    private static void writeOutputs(ByteArrayOutputStream buf, long amount, byte[] toScript,
-                                     long change, byte[] changeScript) {
-        writeOutputs(buf, outputs(amount, toScript, change, changeScript));
-    }
-
-    /** Serialize an arbitrary output list — the shape both the tx and its sighash use. */
+    /** Serialize the output section — shared by the tx body and the sighash preimage. */
     private static void writeOutputs(ByteArrayOutputStream buf, List<TxOutput> outputs) {
         VarInt.write(buf, outputs.size());
         for (TxOutput output : outputs) {

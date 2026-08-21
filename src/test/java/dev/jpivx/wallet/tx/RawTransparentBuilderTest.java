@@ -220,6 +220,25 @@ class RawTransparentBuilderTest {
     }
 
     @Test
+    void subDustAmountsAreRejectedOnEveryEntryPoint() {
+        // The invariant the batch path's Recipient enforces: one sub-dust
+        // output makes the whole transaction unrelayable. The legacy
+        // single-recipient entry points must agree.
+        List<Utxo> utxos = List.of(utxo("a", 0, 500_000_000));
+        for (long bad : new long[]{1, 100, 545}) {
+            assertThrows(IllegalArgumentException.class,
+                    () -> RawTransparentBuilder.createRawTransparentTransaction(
+                            utxos, seed(), ownAddress(), bad));
+            assertThrows(IllegalArgumentException.class,
+                    () -> RawTransparentBuilder.createRawTransparentTransactionFromUtxos(
+                            seed(), 0, 0, utxos, ownAddress(), bad));
+            assertThrows(IllegalArgumentException.class,
+                    () -> RawTransparentBuilder.createRawTransparentTransactionMultiIndex(
+                            utxos, seed(), ownAddress(), bad));
+        }
+    }
+
+    @Test
     void nearMaxAmountFailsInsteadOfOverflowing() {
         // amount + fee used to wrap negative, pass the sufficiency check, and
         // produce a signed tx with garbage output values.

@@ -17,9 +17,9 @@ public record Recipient(String address, long amount) {
         if (address == null || address.isBlank()) {
             throw new IllegalArgumentException("recipient address is required");
         }
-        if (amount < CoinSelector.MIN_CHANGE) {
+        if (amount < CoinSelector.DUST_THRESHOLD) {
             throw new IllegalArgumentException("recipient amount " + amount
-                    + " sat is below the dust threshold (" + CoinSelector.MIN_CHANGE
+                    + " sat is below the dust threshold (" + CoinSelector.DUST_THRESHOLD
                     + " sat): " + address);
         }
     }

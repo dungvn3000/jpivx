@@ -145,6 +145,19 @@ class MultiOutputBuilderTest {
     }
 
     @Test
+    void aTransactionOverTheStandardnessSizeLimitIsRejected() {
+        byte[] seed = seed();
+        // 3,000 dust-minimum pieces serialize to ~102KB of outputs alone —
+        // consensus-valid, but no default-policy node would relay it.
+        List<Recipient> pieces = RawTransparentBuilder.split(OWN, 3_000L * 546L, 3_000);
+        List<Utxo> utxos = List.of(utxo(5_000_000L, "f".repeat(64)));
+
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> RawTransparentBuilder.createRawTransparentTransaction(utxos, seed, pieces));
+        assertTrue(e.getMessage().contains("standardness"), e.getMessage());
+    }
+
+    @Test
     void insufficientBalanceCountsEveryOutputInTheFee() {
         byte[] seed = seed();
         // Exactly the recipient total, so the fee for 4 outputs cannot be covered.
