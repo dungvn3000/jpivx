@@ -392,7 +392,8 @@ The Java implementation is **byte-compatible** with the Rust `pivx-wallet-kit`:
 ## Limitations
 
 - **Full shield lifecycle works**: derive addresses → sync (scan, decrypt, witness)
-  → send (Groth16-proven spends to `ps1...` or `D...`) → shield transparent coins
+  → send (Groth16-proven spends to one or many `ps1...`/`D...` recipients in a
+  single tx) → shield transparent coins
   (`ShieldingService`, t→z). Remaining gaps: shielding spends only UTXOs on the
   default address `m/44'/119'/0'/0/0` and returns change transparently (kit
   behaviour), no reorg handling (same semantics as the Rust kit), and proving
