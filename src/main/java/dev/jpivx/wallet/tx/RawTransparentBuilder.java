@@ -8,9 +8,11 @@ import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import dev.jpivx.wallet.core.FeeEstimator;
 import dev.jpivx.wallet.core.VarInt;
@@ -83,11 +85,7 @@ public final class RawTransparentBuilder {
         byte[] toScript = PivxAddress.addressToP2pkhScript(toAddress);
         byte[] ownScript = PivxAddress.addressToP2pkhScript(own.address());
 
-        long total = 0L;
-        for (Utxo u : utxos) {
-            total = Math.addExact(total, u.amount());
-        }
-
+        long total = totalOf(utxos);
         long fee = FeeEstimator.estimateRawTransparentFee(utxos.size(), 2);
         if (total < Math.addExact(amount, fee)) {
             throw new IllegalArgumentException(
@@ -169,29 +167,10 @@ public final class RawTransparentBuilder {
      */
     public static TransparentTransactionResult createRawTransparentTransactionMultiIndex(
             List<Utxo> utxos, byte[] bip39Seed, String toAddress, long amount, int fromChange) {
-        requireTransparentDest(toAddress);
-        requireValidAmount(amount);
-        if (utxos.isEmpty()) {
-            throw new IllegalArgumentException("No transparent UTXOs available");
-        }
-
-        Selection sel = selectWithFee(utxos, amount);
-
-        // Derive one key per unique hdIndex in the selection.
-        Map<Integer, TransparentKeys.TransparentKey> keyCache = new HashMap<>();
-        TransparentKeys.TransparentKey[] inputKeys =
-                new TransparentKeys.TransparentKey[sel.selected.size()];
-        for (int i = 0; i < sel.selected.size(); i++) {
-            inputKeys[i] = keyCache.computeIfAbsent(sel.selected.get(i).hdIndex(), idx ->
-                    TransparentKeys.transparentKeyFromBip39Seed(bip39Seed, fromChange, idx));
-        }
-
-        byte[] toScript = PivxAddress.addressToP2pkhScript(toAddress);
-        // Change goes back to the first selected UTXO's address.
-        byte[] changeScript = PivxAddress.addressToP2pkhScript(inputKeys[0].address());
-
-        byte[] txBytes = buildAndSign(sel.selected, inputKeys, changeScript, toScript, amount, sel.change);
-        return result(txBytes, sel.selected, amount, sel.fee);
+        // One recipient is just the smallest batch — selection, per-hdIndex key
+        // derivation and change routing are identical, so share the one code path.
+        return createRawTransparentTransaction(utxos, bip39Seed,
+                List.of(new Recipient(toAddress, amount)), fromChange);
     }
 
     /**
@@ -335,6 +314,15 @@ public final class RawTransparentBuilder {
         return new Selection(selected, fee, change);
     }
 
+    /** Sum of the UTXO amounts; throws {@link ArithmeticException} on overflow. */
+    private static long totalOf(List<Utxo> utxos) {
+        long total = 0L;
+        for (Utxo u : utxos) {
+            total = Math.addExact(total, u.amount());
+        }
+        return total;
+    }
+
     /** Coin selection outcome: chosen inputs + the fee/change they imply. */
     private record Selection(List<Utxo> selected, long fee, long change) {}
 
@@ -356,12 +344,12 @@ public final class RawTransparentBuilder {
             List<Utxo> selected = bnb.get();
             // Changeless: everything above the payment is fee (BnB may leave up
             // to MIN_CHANGE of surplus for the miners on top of the estimate).
-            long total = selected.stream().mapToLong(Utxo::amount).sum();
+            long total = totalOf(selected);
             return new Selection(selected, total - amount, 0);
         }
         List<Utxo> selected = CoinSelector.selectKnapsack(utxos, amount, recipientOutputs + 1);
         long fee = CoinSelector.estimateFee(selected.size(), recipientOutputs + 1);
-        long total = selected.stream().mapToLong(Utxo::amount).sum();
+        long total = totalOf(selected);
         long change = total - Math.addExact(amount, fee);
         if (change < 0) {
             throw new IllegalArgumentException(
@@ -396,6 +384,17 @@ public final class RawTransparentBuilder {
     private static byte[] buildAndSign(List<Utxo> selected,
                                        TransparentKeys.TransparentKey[] inputKeys,
                                        List<TxOutput> outputs) {
+        // A tx spending the same outpoint twice is consensus-invalid
+        // (bad-txns-inputs-duplicate) — catch a caller's merged/overlapping
+        // UTXO lists here rather than signing a tx no node will accept.
+        Set<String> outpoints = new HashSet<>(selected.size() * 2);
+        for (Utxo u : selected) {
+            if (!outpoints.add(u.txid() + ":" + u.vout())) {
+                throw new IllegalArgumentException("duplicate outpoint " + u.txid() + ":"
+                        + u.vout() + " — the same UTXO appears twice in the input set");
+            }
+        }
+
         // ECKey construction is comparatively expensive; share per unique key.
         Map<TransparentKeys.TransparentKey, ECKey> ecKeys = new HashMap<>();
         Map<TransparentKeys.TransparentKey, byte[]> scripts = new HashMap<>();

@@ -220,6 +220,18 @@ class RawTransparentBuilderTest {
     }
 
     @Test
+    void duplicateOutpointsAreRejected() {
+        // The same (txid, vout) twice — e.g. a caller merging overlapping UTXO
+        // queries — would produce a consensus-invalid tx
+        // (bad-txns-inputs-duplicate), so the builder must refuse to sign it.
+        List<Utxo> utxos = List.of(utxo("a", 0, 100_000_000), utxo("a", 0, 100_000_000));
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> RawTransparentBuilder.createRawTransparentTransactionFromUtxos(
+                        seed(), 0, 0, utxos, ownAddress(), 150_000_000));
+        assertTrue(e.getMessage().contains("duplicate outpoint"), e.getMessage());
+    }
+
+    @Test
     void subDustAmountsAreRejectedOnEveryEntryPoint() {
         // The invariant the batch path's Recipient enforces: one sub-dust
         // output makes the whole transaction unrelayable. The legacy
