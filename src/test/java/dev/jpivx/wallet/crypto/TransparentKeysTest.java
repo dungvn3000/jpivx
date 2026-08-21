@@ -3,6 +3,7 @@ package dev.jpivx.wallet.crypto;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Locale;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -47,7 +48,7 @@ class TransparentKeysTest {
     void mixedCaseMnemonicDerivesSameAddress() {
         // parse() lower-cases words, so casing must not change the seed —
         // otherwise the stored (normalized) mnemonic wouldn't reproduce the wallet.
-        String mixed = TEST_MNEMONIC.substring(0, 1).toUpperCase(java.util.Locale.ROOT)
+        String mixed = TEST_MNEMONIC.substring(0, 1).toUpperCase(Locale.ROOT)
                 + TEST_MNEMONIC.substring(1);
         assertEquals(EXPECTED_ADDRESS, TransparentKeys.getTransparentAddress(mixed));
     }

@@ -3,11 +3,14 @@ package dev.jpivx.wallet.crypto;
 import dev.jpivx.wallet.internal.MnemonicCode;
 import dev.jpivx.wallet.internal.MnemonicCode.MnemonicException;
 
+import java.io.IOException;
+import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * BIP39 mnemonic phrase generation, validation, and seed derivation.
@@ -67,7 +70,7 @@ public final class BIP39Service {
             byte[] entropy = new byte[entropyBytes];
             try {
                 SecureRandom.getInstanceStrong().nextBytes(entropy);
-            } catch (java.security.NoSuchAlgorithmException e) {
+            } catch (NoSuchAlgorithmException e) {
                 new SecureRandom().nextBytes(entropy);
             }
             return MnemonicCode.INSTANCE.toMnemonic(entropy);
@@ -95,9 +98,9 @@ public final class BIP39Service {
      *
      * @param mnemonic the word list
      * @throws MnemonicException on invalid length, unknown word, or checksum failure
-     * @throws java.io.IOException if the bundled wordlist cannot be loaded (first use)
+     * @throws IOException if the bundled wordlist cannot be loaded (first use)
      */
-    public static void validate(List<String> mnemonic) throws MnemonicException, java.io.IOException {
+    public static void validate(List<String> mnemonic) throws MnemonicException, IOException {
         MnemonicCode.INSTANCE.check(mnemonic);
     }
 
@@ -112,7 +115,7 @@ public final class BIP39Service {
         List<String> words = new ArrayList<>(parts.length);
         for (String p : parts) {
             if (!p.isEmpty()) {
-                words.add(p.toLowerCase(java.util.Locale.ROOT));
+                words.add(p.toLowerCase(Locale.ROOT));
             }
         }
         return words;
@@ -121,7 +124,7 @@ public final class BIP39Service {
     /**
      * Validate a raw mnemonic string (parse + check).
      */
-    public static void validateString(String mnemonic) throws MnemonicException, java.io.IOException {
+    public static void validateString(String mnemonic) throws MnemonicException, IOException {
         List<String> words = parse(mnemonic);
         validate(words);
     }

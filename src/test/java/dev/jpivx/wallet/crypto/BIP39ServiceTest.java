@@ -8,7 +8,9 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -267,7 +269,7 @@ class BIP39ServiceTest {
     void wordlistHasExactly2048UniqueWords() throws Exception {
         // Every 11-bit index must map to a distinct word, or entropy silently
         // collapses. Exercised through the public generation path.
-        java.util.Set<String> seen = new java.util.HashSet<>();
+        Set<String> seen = new HashSet<>();
         for (int i = 0; i < 64; i++) {
             seen.addAll(BIP39Service.generateMnemonic());
         }

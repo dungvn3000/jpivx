@@ -6,6 +6,7 @@ import dev.jpivx.wallet.internal.ByteUtil;
 
 import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -88,7 +89,7 @@ public final class RawTransparentBuilder {
 
         // Every input signs with the same key/script.
         TransparentKeys.TransparentKey[] inputKeys = new TransparentKeys.TransparentKey[utxos.size()];
-        java.util.Arrays.fill(inputKeys, own);
+        Arrays.fill(inputKeys, own);
 
         byte[] txBytes = buildAndSign(utxos, inputKeys, ownScript, toScript, amount, sel.change);
         return result(txBytes, utxos, amount, sel.fee);
@@ -125,7 +126,7 @@ public final class RawTransparentBuilder {
 
         TransparentKeys.TransparentKey[] inputKeys =
                 new TransparentKeys.TransparentKey[sel.selected.size()];
-        java.util.Arrays.fill(inputKeys, own);
+        Arrays.fill(inputKeys, own);
 
         byte[] txBytes = buildAndSign(sel.selected, inputKeys, ownScript, toScript, amount, sel.change);
         return result(txBytes, sel.selected, amount, sel.fee);

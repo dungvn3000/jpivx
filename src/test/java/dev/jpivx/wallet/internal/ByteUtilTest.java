@@ -3,6 +3,7 @@ package dev.jpivx.wallet.internal;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayOutputStream;
+import java.util.Arrays;
 import java.util.HexFormat;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -72,7 +73,7 @@ class ByteUtilTest {
     @Test
     void sha256dIsDoubleNotSingle() {
         byte[] input = "hello".getBytes();
-        assertFalse(java.util.Arrays.equals(ByteUtil.sha256(input), ByteUtil.sha256d(input)),
+        assertFalse(Arrays.equals(ByteUtil.sha256(input), ByteUtil.sha256d(input)),
                 "sha256d must differ from sha256");
     }
 

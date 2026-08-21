@@ -7,8 +7,10 @@ import org.bouncycastle.math.ec.ECPoint;
 
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.Base64;
 
 import dev.jpivx.wallet.core.PivxParams;
 
@@ -72,7 +74,7 @@ public final class PivxMessageSigner {
         full[0] = header;
         encodeCompactR(sig.r, full, 1);
         encodeCompactR(sig.s, full, 33);
-        return java.util.Base64.getEncoder().encodeToString(full);
+        return Base64.getEncoder().encodeToString(full);
     }
 
     /**
@@ -89,7 +91,7 @@ public final class PivxMessageSigner {
     public static boolean verifyMessage(String address, String message, String signatureB64) {
         byte[] sigBytes;
         try {
-            sigBytes = java.util.Base64.getDecoder().decode(signatureB64);
+            sigBytes = Base64.getDecoder().decode(signatureB64);
         } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException("Bad base64: " + e.getMessage(), e);
         }
@@ -133,7 +135,7 @@ public final class PivxMessageSigner {
         byte[] magic = PivxParams.PIVX_MSG_MAGIC.getBytes(StandardCharsets.UTF_8);
         byte[] msg = message.getBytes(StandardCharsets.UTF_8);
         ByteBuffer buf = ByteBuffer.allocate(magic.length + msg.length + 18)
-                .order(java.nio.ByteOrder.LITTLE_ENDIAN); // Bitcoin compact-size is LE
+                .order(ByteOrder.LITTLE_ENDIAN); // Bitcoin compact-size is LE
         writeCompactSize(buf, magic.length);
         buf.put(magic);
         writeCompactSize(buf, msg.length);

@@ -1,5 +1,6 @@
 package dev.jpivx.wallet.tx;
 
+import dev.jpivx.wallet.core.FeeEstimator;
 import org.junit.jupiter.api.Test;
 import dev.jpivx.wallet.core.Utxo;
 
@@ -26,7 +27,7 @@ class CoinSelectorTest {
         for (int i = 1; i <= 5; i++) {
             for (int o = 1; o <= 3; o++) {
                 long via_cs = CoinSelector.estimateFee(i, o);
-                long via_fe = dev.jpivx.wallet.core.FeeEstimator.estimateRawTransparentFee(i, o);
+                long via_fe = FeeEstimator.estimateRawTransparentFee(i, o);
                 assertEquals(via_fe, via_cs,
                         "Fee mismatch for " + i + " inputs / " + o + " outputs");
             }

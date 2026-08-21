@@ -1,7 +1,11 @@
 package dev.jpivx.wallet.shield;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Mutable shield sync state used by {@link ShieldSyncService}.
@@ -43,7 +47,7 @@ public final class ShieldState {
 
     /** Unspent Sapling notes after the last sync (read-only view). */
     public List<SerializedNote> getUnspentNotes() {
-        return java.util.Collections.unmodifiableList(unspentNotes);
+        return Collections.unmodifiableList(unspentNotes);
     }
     public void setUnspentNotes(List<SerializedNote> unspentNotes) {
         this.unspentNotes = unspentNotes != null ? new ArrayList<>(unspentNotes) : new ArrayList<>();
@@ -71,11 +75,11 @@ public final class ShieldState {
      * @param nullifiers hex-encoded nullifiers of spent notes
      * @return number of notes removed
      */
-    public int removeSpentNotes(java.util.Collection<String> nullifiers) {
+    public int removeSpentNotes(Collection<String> nullifiers) {
         if (nullifiers == null || nullifiers.isEmpty()) {
             return 0;
         }
-        java.util.Set<String> spent = new java.util.HashSet<>(nullifiers);
+        Set<String> spent = new HashSet<>(nullifiers);
         int before = unspentNotes.size();
         unspentNotes.removeIf(n -> spent.contains(n.nullifier()));
         return before - unspentNotes.size();

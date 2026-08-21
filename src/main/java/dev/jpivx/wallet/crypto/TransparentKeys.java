@@ -3,6 +3,7 @@ package dev.jpivx.wallet.crypto;
 import dev.jpivx.wallet.internal.ChildNumber;
 import dev.jpivx.wallet.internal.DeterministicKey;
 
+import java.math.BigInteger;
 import java.util.Arrays;
 import java.util.List;
 
@@ -73,7 +74,7 @@ public final class TransparentKeys {
         }
     }
 
-    static byte[] bigIntTo32Bytes(java.math.BigInteger v) {
+    static byte[] bigIntTo32Bytes(BigInteger v) {
         byte[] b = v.toByteArray();
         if (b.length == 32) {
             return b;

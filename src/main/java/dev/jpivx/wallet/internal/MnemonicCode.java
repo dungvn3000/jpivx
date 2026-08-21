@@ -6,14 +6,17 @@ import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.text.Normalizer;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class MnemonicCode {
     public static final MnemonicCode INSTANCE = new MnemonicCode();
     private final List<String> wordList;
     /** word → 11-bit index lookup (O(1) instead of List.indexOf O(n)). */
-    private final java.util.Map<String, Integer> wordIndex;
+    private final Map<String, Integer> wordIndex;
 
     private MnemonicCode() {
         wordList = new ArrayList<>();
@@ -32,7 +35,7 @@ public class MnemonicCode {
         }
         if (wordList.size() != 2048)
             throw new IllegalStateException("BIP39 wordlist must have 2048 words, got: " + wordList.size());
-        wordIndex = new java.util.HashMap<>(4096);
+        wordIndex = new HashMap<>(4096);
         for (int i = 0; i < wordList.size(); i++) {
             wordIndex.put(wordList.get(i), i);
         }
@@ -136,10 +139,10 @@ public class MnemonicCode {
      */
     public static byte[] toSeed(List<String> mnemonic, String passphrase) {
         // BIP39 mandates NFKD normalization of both the mnemonic and the passphrase.
-        String pass = java.text.Normalizer.normalize(
-                String.join(" ", mnemonic), java.text.Normalizer.Form.NFKD);
-        String salt = java.text.Normalizer.normalize(
-                "mnemonic" + (passphrase != null ? passphrase : ""), java.text.Normalizer.Form.NFKD);
+        String pass = Normalizer.normalize(
+                String.join(" ", mnemonic), Normalizer.Form.NFKD);
+        String salt = Normalizer.normalize(
+                "mnemonic" + (passphrase != null ? passphrase : ""), Normalizer.Form.NFKD);
         try {
             PBEKeySpec spec = new PBEKeySpec(
                     pass.toCharArray(), salt.getBytes(StandardCharsets.UTF_8), 2048, 512);

@@ -10,6 +10,7 @@ import dev.jpivx.wallet.crypto.TransparentKeys;
 import dev.jpivx.wallet.core.Utxo;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -91,7 +92,7 @@ class RawTransparentBuilderTest {
         byte[] txBytes = Hex.decode(r.txhex());
         // Raw v1 tx: version bytes 0x01 0x00 0x00 0x00.
         assertArrayEquals(new byte[]{0x01, 0x00, 0x00, 0x00},
-                java.util.Arrays.copyOfRange(txBytes, 0, 4));
+                Arrays.copyOfRange(txBytes, 0, 4));
     }
 
     @Test
@@ -124,7 +125,7 @@ class RawTransparentBuilderTest {
                 TransparentKeys.transparentKeyFromBip39Seed(seed(), 0, 5);
         byte[] fromScript;
         try {
-            fromScript = dev.jpivx.wallet.crypto.PivxAddress.addressToP2pkhScript(fromKey.address());
+            fromScript = PivxAddress.addressToP2pkhScript(fromKey.address());
         } catch (Exception e) {
             fromScript = new byte[0];
         }

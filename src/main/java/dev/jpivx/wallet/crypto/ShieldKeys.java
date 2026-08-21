@@ -6,6 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Locale;
+import java.util.zip.CRC32;
 
 /**
  * Sapling shield key/address derivation via JNI to the Rust
@@ -296,7 +297,7 @@ public final class ShieldKeys {
             // Cache the extraction under ~/.pivx-wallet/native/, keyed by
             // CRC32 of the payload: repeated JVM launches reuse the same file
             // instead of littering the temp dir with one copy per process.
-            java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+            CRC32 crc = new CRC32();
             crc.update(bytes);
             Path cacheDir = Path.of(System.getProperty("user.home"),
                     ".pivx-wallet", "native", platform);

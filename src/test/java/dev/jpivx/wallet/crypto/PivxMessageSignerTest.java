@@ -1,10 +1,14 @@
 package dev.jpivx.wallet.crypto;
 
+import dev.jpivx.wallet.core.PivxParams;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Port of {@code roundtrip_compressed} and {@code malformed_signatures_error}
@@ -58,7 +62,7 @@ class PivxMessageSignerTest {
         // id is uniquely determined by the pubkey.
         byte[] privkey = derivePrivKey();
         String sig = PivxMessageSigner.signMessage(privkey, GOLDEN_MESSAGE);
-        org.junit.jupiter.api.Assertions.assertEquals(GOLDEN_SIGNATURE, sig,
+        assertEquals(GOLDEN_SIGNATURE, sig,
                 "Java signature must match the Rust kit's golden vector");
 
         // And the golden signature must verify against the golden address.
@@ -73,13 +77,13 @@ class PivxMessageSignerTest {
         assertThrows(IllegalArgumentException.class,
                 () -> PivxMessageSigner.verifyMessage(addr, "msg", ""));
         // Wrong length (decoded to 32 bytes)
-        String tooShort = java.util.Base64.getEncoder().encodeToString(new byte[32]);
+        String tooShort = Base64.getEncoder().encodeToString(new byte[32]);
         assertThrows(IllegalArgumentException.class,
                 () -> PivxMessageSigner.verifyMessage(addr, "msg", tooShort));
         // Bad header byte (decoded to 65 bytes but header out of range)
         byte[] bad = new byte[65];
         bad[0] = 99;
-        String badB64 = java.util.Base64.getEncoder().encodeToString(bad);
+        String badB64 = Base64.getEncoder().encodeToString(bad);
         assertThrows(IllegalArgumentException.class,
                 () -> PivxMessageSigner.verifyMessage(addr, "msg", badB64));
     }
@@ -92,15 +96,15 @@ class PivxMessageSignerTest {
         byte[] hash = PivxMessageSigner.messageHash(longMessage);
 
         // Rebuild the expected preimage by hand with a known-good LE encoding.
-        byte[] magic = dev.jpivx.wallet.core.PivxParams.PIVX_MSG_MAGIC
-                .getBytes(java.nio.charset.StandardCharsets.UTF_8);
-        java.io.ByteArrayOutputStream preimage = new java.io.ByteArrayOutputStream();
+        byte[] magic = PivxParams.PIVX_MSG_MAGIC
+                .getBytes(StandardCharsets.UTF_8);
+        ByteArrayOutputStream preimage = new ByteArrayOutputStream();
         preimage.write(magic.length); // < 253: single byte
         preimage.writeBytes(magic);
         preimage.write(0xfd);
         preimage.write(300 & 0xff);        // LE low byte
         preimage.write((300 >>> 8) & 0xff); // LE high byte
-        preimage.writeBytes(longMessage.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        preimage.writeBytes(longMessage.getBytes(StandardCharsets.UTF_8));
         org.junit.jupiter.api.Assertions.assertArrayEquals(
                 PivxAddress.doubleSha256(preimage.toByteArray()), hash);
 
@@ -119,7 +123,7 @@ class PivxMessageSignerTest {
         byte[] crafted = new byte[65];
         crafted[0] = 33; // header: compressed, recid 2
         crafted[64] = 1; // s = 1 (valid), r stays all-zero
-        String craftedB64 = java.util.Base64.getEncoder().encodeToString(crafted);
+        String craftedB64 = Base64.getEncoder().encodeToString(crafted);
         assertThrows(IllegalArgumentException.class,
                 () -> PivxMessageSigner.verifyMessage(GOLDEN_ADDRESS, "msg", craftedB64));
     }
