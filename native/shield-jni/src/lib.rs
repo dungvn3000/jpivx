@@ -578,8 +578,7 @@ pub extern "system" fn Java_dev_jpivx_wallet_crypto_ShieldKeys_nativeSelectShiel
 
 #[cfg(test)]
 mod tests {
-    use pivx_wallet_kit::checkpoints;
-use pivx_wallet_kit::keys;
+    use pivx_wallet_kit::keys;
 
     /// Same BIP39 vector as `pivx-wallet-kit/tests/integration.rs`.
     const TEST_MNEMONIC: &str =
