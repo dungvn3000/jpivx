@@ -9,7 +9,9 @@
 //! - extfvk → bech32, default diversified payment address → `ps1...`,
 //! - `shield_address_at` scans for the next valid diversifier from a start index,
 //! - `handle_blocks` trial-decrypts outputs, surfaces spent nullifiers, and
-//!   advances the commitment tree + note witnesses.
+//!   advances the commitment tree + note witnesses,
+//! - `get_checkpoint` hands out the embedded mainnet commitment-tree
+//!   checkpoints a wallet must start its tree from.
 //!
 //! Every export wraps its body in `catch_unwind`: a Rust panic must never
 //! unwind across the JNI boundary (undefined behaviour). Errors surface as
@@ -20,9 +22,10 @@ use std::error::Error;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use jni::objects::{JClass, JObject, JObjectArray, JString};
-use jni::sys::{jbyteArray, jlong, jobjectArray, jstring};
+use jni::sys::{jbyteArray, jint, jlong, jobjectArray, jstring};
 use jni::JNIEnv;
 
+use pivx_wallet_kit::checkpoints;
 use pivx_wallet_kit::keys;
 use pivx_wallet_kit::sapling::builder::{create_shield_transaction, select_shield_notes};
 use pivx_wallet_kit::sapling::prover::verify_and_load_params;
@@ -234,6 +237,38 @@ pub extern "system" fn Java_dev_jpivx_wallet_crypto_ShieldKeys_nativeShieldAddre
         let addr_jstr = env.new_string(address)?;
         env.set_object_array_element(&array, 0, idx_jstr)?;
         env.set_object_array_element(&array, 1, addr_jstr)?;
+        Ok(array.into_raw())
+    })
+    .unwrap_or(std::ptr::null_mut())
+}
+
+/// Look up the embedded mainnet Sapling checkpoint at or before `block_height`.
+///
+/// A wallet must seed its commitment tree from a real checkpoint: the tree is
+/// consensus state, and a tree built from an arbitrary starting point yields an
+/// anchor no node ever had — spends are then rejected with
+/// `bad-txns-shielded-requirements-not-met`. The empty tree (`"000000"`) is only
+/// valid at the first checkpoint, before Sapling activation.
+///
+/// Returns a `String[2]`: `{ height, commitmentTreeHex }`. Heights below the
+/// first checkpoint clamp to it, mirroring `checkpoints::get_checkpoint`.
+///
+/// Java signature: `static native String[] nativeGetCheckpoint(int blockHeight)`
+#[no_mangle]
+pub extern "system" fn Java_dev_jpivx_wallet_crypto_ShieldKeys_nativeGetCheckpoint(
+    mut env: JNIEnv,
+    _class: JClass,
+    block_height: jint,
+) -> jobjectArray {
+    guard(&mut env, |env| {
+        let (height, tree) = checkpoints::get_checkpoint(block_height);
+
+        let string_class = env.find_class("java/lang/String")?;
+        let array: JObjectArray = env.new_object_array(2, string_class, JObject::null())?;
+        let height_jstr = env.new_string(height.to_string())?;
+        let tree_jstr = env.new_string(tree)?;
+        env.set_object_array_element(&array, 0, height_jstr)?;
+        env.set_object_array_element(&array, 1, tree_jstr)?;
         Ok(array.into_raw())
     })
     .unwrap_or(std::ptr::null_mut())
@@ -543,7 +578,8 @@ pub extern "system" fn Java_dev_jpivx_wallet_crypto_ShieldKeys_nativeSelectShiel
 
 #[cfg(test)]
 mod tests {
-    use pivx_wallet_kit::keys;
+    use pivx_wallet_kit::checkpoints;
+use pivx_wallet_kit::keys;
 
     /// Same BIP39 vector as `pivx-wallet-kit/tests/integration.rs`.
     const TEST_MNEMONIC: &str =

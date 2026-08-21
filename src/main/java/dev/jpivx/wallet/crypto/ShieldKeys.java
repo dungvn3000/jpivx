@@ -61,6 +61,15 @@ public final class ShieldKeys {
     /** A diversified shield address plus the diversifier index actually used. */
     public record ShieldAddress(long index, String address) {}
 
+    /**
+     * A mainnet Sapling checkpoint: the serialized commitment tree as it stood
+     * at {@code height}.
+     *
+     * @param height         block height the tree belongs to
+     * @param commitmentTree hex-encoded commitment tree at that height
+     */
+    public record Checkpoint(int height, String commitmentTree) {}
+
     /** True when the native shield library was found and linked. */
     public static boolean isAvailable() {
         return AVAILABLE;
@@ -111,6 +120,29 @@ public final class ShieldKeys {
         requireAvailable();
         String[] pair = nativeShieldAddressAt(encodedExtfvk, startIndex);
         return new ShieldAddress(Long.parseLong(pair[0]), pair[1]);
+    }
+
+    /**
+     * The kit's embedded mainnet checkpoint at or before {@code blockHeight} —
+     * the commitment tree a wallet must start syncing from.
+     *
+     * <p>The commitment tree is consensus state: a tree accumulated from an
+     * arbitrary starting point produces an anchor no node ever had, and every
+     * spend built against it is rejected with
+     * {@code bad-txns-shielded-requirements-not-met}. So a new or restored
+     * wallet snaps its birthday down to {@code checkpoint(birthday).height()}
+     * and seeds its tree with {@link Checkpoint#commitmentTree()} — exactly what
+     * the kit's own {@code create_wallet_from_mnemonic} does. The empty tree
+     * ({@code "000000"}) is the checkpoint for the first entry only, before
+     * Sapling activation.
+     *
+     * @param blockHeight the wallet birthday (clamped up to the first checkpoint)
+     * @return the closest checkpoint at or before that height
+     */
+    public static Checkpoint checkpoint(int blockHeight) {
+        requireAvailable();
+        String[] pair = nativeGetCheckpoint(blockHeight);
+        return new Checkpoint(Integer.parseInt(pair[0]), pair[1]);
     }
 
     /**
@@ -248,6 +280,8 @@ public final class ShieldKeys {
     private static native String nativeDefaultShieldAddress(byte[] bip39Seed);
 
     private static native String[] nativeShieldAddressAt(String extfvk, long startIndex);
+
+    private static native String[] nativeGetCheckpoint(int blockHeight);
 
     private static native String nativeHandleBlocks(String treeHex, String blocksJson,
                                                     String extfvk, String notesJson);

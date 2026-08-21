@@ -88,6 +88,7 @@ String address = PivxAddress.hash160ToAddress(hash160);
 
 // Shield address (requires JNI library)
 boolean available = ShieldKeys.isAvailable();
+ShieldKeys.Checkpoint cp = ShieldKeys.checkpoint(birthdayHeight); // sync starting point
 String extfvk = ShieldKeys.extfvk(seed);                     // "pxviews1..."
 String shieldAddr = ShieldKeys.defaultShieldAddress(seed);    // "ps124f3d..."
 ```
@@ -163,12 +164,22 @@ int tip = rpc.getBlockCount();
 
 ### Shield Sync (JNI)
 
+The commitment tree is **consensus state**: a tree accumulated from an arbitrary
+starting point yields an anchor no node ever had, and every spend built against
+it is rejected with `bad-txns-shielded-requirements-not-met`. So a wallet seeds
+its tree from an embedded checkpoint — never from an empty string — exactly as
+the kit's own `create_wallet_from_mnemonic` does:
+
 ```java
+// Snap the birthday down to the nearest checkpoint and start from its tree.
+// (The empty tree "000000" is the first checkpoint only, before Sapling activation.)
+ShieldKeys.Checkpoint cp = ShieldKeys.checkpoint(birthdayHeight);
+
 // ShieldState holds the three fields that change during sync
 ShieldState state = new ShieldState(
-    birthdayHeight,   // last synced block (start here)
-    "",               // commitment tree (empty on first sync)
-    List.of()         // unspent notes (empty on first sync)
+    cp.height(),          // last synced block (start here)
+    cp.commitmentTree(),  // commitment tree as of that height
+    List.of()             // unspent notes (empty on first sync)
 );
 
 ShieldNodeClient node = new ShieldNodeClient("https://rpc.pivxla.bz/mainnet");
@@ -305,12 +316,14 @@ seed is derived natively from the wallet's own mnemonic, and foreign
 jpivx/
 ├── native/shield-jni/           Rust JNI bridge (cdylib libjpivx_shield_jni)
 │   └── src/lib.rs               JNI exports → pivx_wallet_kit keys/sync/builders
-│                                (Sapling + shielding; cached Groth16 prover)
+│                                (Sapling + shielding; cached Groth16 prover;
+│                                checkpoint lookup)
 ├── native/build-native.sh       cargo build + copy cdylib into resources
 └── src/main/java/dev/jpivx/wallet/
     ├── core/                    PivxParams, PivAmount, FeeEstimator, VarInt, Utxo
     ├── crypto/                  BIP39Service, BIP32Service, TransparentKeys,
-    │                            PivxAddress, PivxMessageSigner, ShieldKeys (JNI)
+    │                            PivxAddress, PivxMessageSigner, ShieldKeys (JNI,
+    │                            incl. the embedded commitment-tree checkpoints)
     ├── internal/                Base58, ECKey, HDKeyDerivation, DeterministicKey,
     │                            ChildNumber, MnemonicCode, Sha256Hash, ByteUtil
     ├── tx/                      RawTransparentBuilder (v1 P2PKH, SIGHASH_ALL),
