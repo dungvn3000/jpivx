@@ -238,6 +238,16 @@ saveState(state);
 // kit's own selection)
 long sendAmount = ShieldSendService.resolveSubtractFeeAmount(
     state.getUnspentNotes(), budgetSat, "ps124f3dxh...");
+
+// Send-many: pay several recipients — any mix of ps1... and D... — in ONE
+// transaction. Each shield output carries its own memo and is encrypted to
+// its recipient alone; change returns to the wallet's default shield address.
+ShieldTxResult batch = ShieldSendService.createTransaction(
+    mnemonic, birthdayHeight, state,
+    List.of(new ShieldRecipient("ps124f3dxh...", 2_000_000L, "memo one"),
+            new ShieldRecipient("ps1qqther...",  3_000_000L, "memo two"),
+            new ShieldRecipient("DPo9TNv...",    1_000_000L)), // deshield leg
+    chainTip + 1, params);
 ```
 
 ### Unshield: Shield → Transparent (deshield)

@@ -198,6 +198,33 @@ public final class ShieldKeys {
     }
 
     /**
+     * Multi-recipient form of {@link #createShieldTransaction}: pay several
+     * destinations — any mix of {@code ps1...} (shield) and {@code D...}
+     * (transparent) — from the wallet's notes in one transaction, through the
+     * kit's {@code sapling::builder::create_shield_transaction_to_many}.
+     *
+     * <p>Each shield output carries its own memo and is encrypted to its
+     * recipient alone, so no recipient learns the others' payments. Change
+     * returns to the wallet's default shield address. The result's
+     * {@code amount} is the total paid out to recipients.
+     *
+     * @param walletJson     the full in-memory wallet, Jackson-serialized
+     * @param recipientsJson JSON array of the kit's {@code ShieldRecipient}
+     *                       shape — {@code [{address, amount, memo}]}
+     * @param blockHeight    chain tip + 1 (expiry / anchor context)
+     * @param spendParamsPath  path to {@code sapling-spend.params}
+     * @param outputParamsPath path to {@code sapling-output.params}
+     * @return the kit's {@code TransactionResult} as JSON
+     */
+    public static String createShieldTransactionMany(String walletJson, String recipientsJson,
+                                                     long blockHeight, String spendParamsPath,
+                                                     String outputParamsPath) {
+        requireAvailable();
+        return nativeCreateShieldTransactionMany(walletJson, recipientsJson,
+                blockHeight, spendParamsPath, outputParamsPath);
+    }
+
+    /**
      * Build and sign a <em>shielding</em> transaction — transparent UTXOs in,
      * shield output out — through the Rust kit's
      * {@code transparent::builder::create_shielding_transaction}.
@@ -288,6 +315,10 @@ public final class ShieldKeys {
 
     private static native String nativeCreateShieldTransaction(
             String walletJson, String toAddress, long amountSat, String memo,
+            long blockHeight, String spendParamsPath, String outputParamsPath);
+
+    private static native String nativeCreateShieldTransactionMany(
+            String walletJson, String recipientsJson,
             long blockHeight, String spendParamsPath, String outputParamsPath);
 
     private static native String nativeCreateShieldingTransaction(

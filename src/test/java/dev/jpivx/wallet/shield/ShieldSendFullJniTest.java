@@ -116,6 +116,62 @@ class ShieldSendFullJniTest {
     }
 
     /**
+     * Send-many, shield → 2 shield recipients: three real sapling outputs
+     * (2 recipients + change), fee shape (t_out=0, s_out=3) =
+     * 1000 × (3×948 + 384 + 100) = 3,328,000 sat.
+     */
+    @Test
+    @EnabledIf("shieldAndParamsAvailable")
+    void paysTwoShieldRecipientsInOneTransaction() throws Exception {
+        SaplingParams params = new SaplingParams(SaplingParams.defaultDir());
+        ShieldState state = stateWithNote(5_000_000);
+
+        String own = "ps124f3dxhmtygh72cu8f05t94yey59at3armnk44uctjwdqf9uk2grnth3h5uszmqzzeev7kcr7rn";
+        List<ShieldRecipient> recipients = List.of(
+                new ShieldRecipient(own, 2_000_000L, "first"),
+                new ShieldRecipient(own, 3_000_000L, "second"));
+
+        ShieldTxResult result = ShieldSendService.createTransaction(
+                TEST_MNEMONIC, 5_000_000, state, recipients, 5_000_001L, params);
+
+        assertNotNull(result.txhex());
+        assertTrue(result.txhex().startsWith("030000"), "v3 transaction");
+        assertEquals(5_000_000L, result.amount(), "amount() is the recipient total");
+        assertEquals(3_328_000L, result.fee(),
+                "fee counts all three real sapling outputs (2 recipients + change)");
+        assertEquals(List.of(EXPECTED_NULLIFIER), result.nullifiers());
+    }
+
+    /**
+     * Send-many, mixed shield + transparent recipients in one tx: fee shape
+     * (t_out=1, s_out=2) = the single-recipient shield fee + one 34-byte
+     * transparent output, and the D... recipient's script appears in the tx.
+     */
+    @Test
+    @EnabledIf("shieldAndParamsAvailable")
+    void paysMixedShieldAndTransparentRecipients() throws Exception {
+        SaplingParams params = new SaplingParams(SaplingParams.defaultDir());
+        ShieldState state = stateWithNote(5_000_000);
+
+        String shieldDest = "ps124f3dxhmtygh72cu8f05t94yey59at3armnk44uctjwdqf9uk2grnth3h5uszmqzzeev7kcr7rn";
+        String transparentDest = "DPo9TNvPwy2ZfmVM3CRCxbBvh6NojguWXJ";
+        List<ShieldRecipient> recipients = List.of(
+                new ShieldRecipient(shieldDest, 2_000_000L, "hello"),
+                new ShieldRecipient(transparentDest, 2_000_000L));
+
+        ShieldTxResult result = ShieldSendService.createTransaction(
+                TEST_MNEMONIC, 5_000_000, state, recipients, 5_000_001L, params);
+
+        assertEquals(4_000_000L, result.amount());
+        assertEquals(EXPECTED_FEE + 34_000L, result.fee(),
+                "shield fee (s_out=2: 1 recipient + change) + one transparent output");
+        String recipientScript = HexFormat.of().formatHex(
+                PivxAddress.addressToP2pkhScript(transparentDest));
+        assertTrue(result.txhex().contains(recipientScript),
+                "tx must pay out to the transparent destination script");
+    }
+
+    /**
      * End-to-end {@code --subtract-fee}: with the pinned 10M note and a 5M
      * budget, the recipient lands at budget − fee and the builder charges
      * precisely the fixpoint fee — so recipient + fee == 5M exactly.

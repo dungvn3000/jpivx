@@ -43,6 +43,22 @@ public final class ShieldSendService {
         return isShieldDestination(toAddress) ? 0 : 1;
     }
 
+    /** Transparent outputs a multi-recipient send produces. */
+    public static long transparentOuts(List<ShieldRecipient> recipients) {
+        return recipients.stream().filter(r -> !isShieldDestination(r.address())).count();
+    }
+
+    /**
+     * Sapling outputs a multi-recipient send produces: the shield recipients
+     * plus one change output, floored at 2 (a Sapling bundle pads to two
+     * outputs) — the shape the kit's fee model charges for.
+     */
+    public static long saplingOuts(List<ShieldRecipient> recipients) {
+        long shieldCount = recipients.stream()
+                .filter(r -> isShieldDestination(r.address())).count();
+        return Math.max(SAPLING_OUTS, shieldCount + 1);
+    }
+
     // ---------------------------------------------------------------------
     // High-level send
     // ---------------------------------------------------------------------
@@ -76,6 +92,34 @@ public final class ShieldSendService {
         String walletJson = buildWalletJson(mnemonic, birthdayHeight, state);
         String resultJson = ShieldKeys.createShieldTransaction(
                 walletJson, toAddress, amountSat, memo, blockHeight,
+                params.spendPath().toString(), params.outputPath().toString());
+        return ShieldTxResult.fromJson(ShieldJson.parseObject(resultJson));
+    }
+
+    /**
+     * Multi-recipient form of
+     * {@link #createTransaction(String, int, ShieldState, String, long, String, long, SaplingParams)}:
+     * pay several destinations — any mix of {@code ps1...} and {@code D...} —
+     * from the wallet's notes in a single transaction.
+     *
+     * <p>Each shield output carries its own memo and is encrypted to its
+     * recipient alone, so no recipient learns the others' payments. Change
+     * returns to the wallet's default shield address. The result's
+     * {@link ShieldTxResult#amount()} is the total paid out to recipients.
+     *
+     * @param recipients one or more destinations with amounts and memos
+     * @throws IllegalArgumentException from the kit (insufficient balance,
+     *         bad address, empty recipient list, ...)
+     */
+    public static ShieldTxResult createTransaction(String mnemonic, int birthdayHeight,
+                                                   ShieldState state,
+                                                   List<ShieldRecipient> recipients,
+                                                   long blockHeight, SaplingParams params)
+            throws IOException {
+        String walletJson = buildWalletJson(mnemonic, birthdayHeight, state);
+        String recipientsJson = JsonWriter.string(ShieldRecipient.toJsonArray(recipients));
+        String resultJson = ShieldKeys.createShieldTransactionMany(
+                walletJson, recipientsJson, blockHeight,
                 params.spendPath().toString(), params.outputPath().toString());
         return ShieldTxResult.fromJson(ShieldJson.parseObject(resultJson));
     }

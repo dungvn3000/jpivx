@@ -27,7 +27,10 @@ use jni::JNIEnv;
 
 use pivx_wallet_kit::checkpoints;
 use pivx_wallet_kit::keys;
-use pivx_wallet_kit::sapling::builder::{create_shield_transaction, select_shield_notes};
+use pivx_wallet_kit::sapling::builder::{
+    create_shield_transaction, create_shield_transaction_to_many, select_shield_notes,
+    ShieldRecipient,
+};
 use pivx_wallet_kit::sapling::prover::verify_and_load_params;
 use pivx_wallet_kit::sapling::sync::{handle_blocks, ShieldBlock};
 use pivx_wallet_kit::sapling::prover::SaplingProver;
@@ -381,6 +384,68 @@ pub extern "system" fn Java_dev_jpivx_wallet_crypto_ShieldKeys_nativeCreateShiel
             &to_address,
             amount_sat as u64,
             &memo,
+            block_height as u32,
+            &prover,
+        )?;
+
+        let out = serde_json::to_string(&result)?;
+        let jstr = env.new_string(out)?;
+        Ok(jstr.into_raw())
+    })
+    .unwrap_or(std::ptr::null_mut())
+}
+
+/// Build and sign a shield transaction paying several recipients at once.
+///
+/// The multi-recipient form of `nativeCreateShieldTransaction`:
+/// `recipients_json` is a JSON array of the kit's `ShieldRecipient` shape —
+/// `[{"address": "ps1...|D...", "amount": <sat>, "memo": ""}]` — and any mix
+/// of shield and transparent destinations goes into one transaction. Each
+/// shield output is encrypted to its recipient alone, so no recipient learns
+/// the others' payments. Change returns to the wallet's default shield
+/// address. All other inputs and the result shape match
+/// `nativeCreateShieldTransaction`.
+///
+/// Java signature:
+/// `static native String nativeCreateShieldTransactionMany(String walletJson, String recipientsJson, long blockHeight, String spendParamsPath, String outputParamsPath)`
+#[no_mangle]
+pub extern "system" fn Java_dev_jpivx_wallet_crypto_ShieldKeys_nativeCreateShieldTransactionMany(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_json: JString,
+    recipients_json: JString,
+    block_height: jlong,
+    spend_params_path: JString,
+    output_params_path: JString,
+) -> jstring {
+    guard(&mut env, |env| {
+        let wallet_json: String = env.get_string(&wallet_json)?.into();
+        let recipients_json: String = env.get_string(&recipients_json)?.into();
+        let spend_path: String = env.get_string(&spend_params_path)?.into();
+        let output_path: String = env.get_string(&output_params_path)?.into();
+
+        if !(0..=u32::MAX as i64).contains(&block_height) {
+            return Err(format!("block_height out of u32 range: {block_height}").into());
+        }
+
+        let recipients: Vec<ShieldRecipient> = serde_json::from_str(&recipients_json)?;
+
+        // wallet_json carries the plaintext seed + mnemonic over the JNI
+        // boundary: wrap in Zeroizing so its buffer is wiped on drop.
+        let wallet_json = zeroize::Zeroizing::new(wallet_json);
+        let mut wallet: WalletData = serde_json::from_str(&wallet_json)?;
+
+        // Fast-fail before the expensive (~50 MB) parameter load: with no
+        // notes to spend there is nothing to prove.
+        if wallet.unspent_notes.is_empty() {
+            return Err("insufficient shield balance: no notes available".into());
+        }
+
+        let prover = load_prover(&spend_path, &output_path)?;
+
+        let result = create_shield_transaction_to_many(
+            &mut wallet,
+            &recipients,
             block_height as u32,
             &prover,
         )?;
